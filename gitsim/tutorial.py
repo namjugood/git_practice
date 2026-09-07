@@ -2,6 +2,11 @@
 
 시나리오와 달리 "사고"를 미리 만들어두지 않고, 학습자가 직접 하나씩 명령을
 실행하며 진행 상황을 `gitsim learn check` 로 확인받는 방식이다.
+
+일부 단계("compose" 모드)는 일부러 바로 실행 가능한 완성된 명령을 주지 않는다.
+그대로 복사-붙여넣기만 하면 손에 남는 게 없기 때문에, 이름/이메일/커밋 메시지/
+브랜치 이름처럼 의미가 있는 값은 학습자가 직접 채워 넣거나 지어내야 다음 단계로
+넘어갈 수 있게 만들었다.
 """
 
 from __future__ import annotations
@@ -31,10 +36,11 @@ INTRO_TEXT = """
     "저장소(repository)"라고 부릅니다.
 
 [3] 앞으로 어떻게 진행되나요?
-    매 단계마다 실행할 명령을 통째로 알려드립니다. 그대로 복사해서 터미널에
-    붙여넣고 Enter만 누르면 됩니다. 명령 끝에 다음 단계 확인까지 자동으로
-    포함되어 있어서, 실행하자마자 바로 결과와 다음 안내가 이어서 나옵니다.
-    (그래서 별도로 `gitsim learn check` 를 다시 입력할 필요가 없습니다)
+    단계 중 일부는 그대로 복사해서 붙여넣으면 바로 실행되는 완성된 명령을
+    보여줍니다. 하지만 이름, 이메일, 커밋 메시지, 브랜치 이름처럼 "직접 정해야
+    하는 값"이 필요한 단계는 일부러 빈칸/설명만 드립니다. 그대로 복사하면
+    손에 남는 게 없기 때문입니다 — 명령의 형태를 보고 실제 값을 채워서 스스로
+    입력해보세요. 완료했는지는 `gitsim learn check` 로 확인합니다.
 
 [4] 시작하기 전에 딱 한 번만
     터미널을 열고, 아래 명령으로 이 프로젝트를 설치해서 `gitsim` 명령을
@@ -42,7 +48,7 @@ INTRO_TEXT = """
 
       pip install -e .
 
-    이제 아래 STEP 1부터 안내된 명령을 순서대로 복사-붙여넣기 하면 됩니다.
+    이제 아래 STEP 1부터 순서대로 진행하면 됩니다.
 """.strip()
 
 
@@ -50,6 +56,7 @@ INTRO_TEXT = """
 class Step:
     key: str
     title: str
+    mode: str  # "template" (그대로 실행 가능한 완성 명령) / "compose" (직접 채워 넣어야 함)
     explain: str
     command_hint: str
     check: Callable[[Workspace], bool]
@@ -57,24 +64,53 @@ class Step:
     on_success: Optional[Callable[[Workspace], None]] = None
 
 
+PLACEHOLDER_NAME = "본인 이름"
+PLACEHOLDER_EMAIL = "본인 이메일"
+
+
 def _has_commit(ws: Workspace) -> bool:
     return g.rev_parse(ws.repo_dir, "HEAD") is not None
 
 
+def _identity_configured(ws: Workspace) -> bool:
+    # --local 로 한정해서, 이미 컴퓨터에 전역(global) 설정이 있는 사람도 이 저장소에서는
+    # 반드시 직접 한 번 입력하도록 만든다 (전역 설정을 물려받아 그냥 통과되는 것을 방지).
+    name = g.run(["config", "--local", "user.name"], cwd=ws.repo_dir, check=False).stdout.strip()
+    email = g.run(["config", "--local", "user.email"], cwd=ws.repo_dir, check=False).stdout.strip()
+    if not name or not email:
+        return False
+    if PLACEHOLDER_NAME in name or PLACEHOLDER_EMAIL in email:
+        return False
+    return "@" in email
+
+
+def _on_practice_branch(ws: Workspace) -> bool:
+    branch = g.current_branch(ws.repo_dir)
+    return bool(branch) and branch != "main"
+
+
+def _remember_branch(ws: Workspace) -> None:
+    branch = g.current_branch(ws.repo_dir)
+    if branch:
+        ws.save_meta(practice_branch=branch)
+
+
 def _branch_ahead_of_main(ws: Workspace) -> bool:
-    branch_tip = g.rev_parse(ws.repo_dir, "practice-branch")
+    branch = ws.get("practice_branch")
+    if not branch:
+        return False
+    branch_tip = g.rev_parse(ws.repo_dir, branch)
     main_tip = g.rev_parse(ws.repo_dir, "main")
     if not branch_tip or not main_tip or branch_tip == main_tip:
         return False
     return g.is_ancestor(ws.repo_dir, main_tip, branch_tip)
 
 
-def _on_branch(ws: Workspace) -> bool:
-    return g.current_branch(ws.repo_dir) == "practice-branch"
-
-
 def _merged(ws: Workspace) -> bool:
-    branch_tip = g.rev_parse(ws.repo_dir, "practice-branch")
+    branch = ws.get("practice_branch")
+    if not branch:
+        return False
+    branch_tip = g.rev_parse(ws.repo_dir, branch)
     main_tip = g.rev_parse(ws.repo_dir, "main")
     if not branch_tip or not main_tip:
         return False
@@ -113,76 +149,101 @@ def _pulled(ws: Workspace) -> bool:
 
 _CHECK_TAIL = "gitsim learn check"
 
-
-def _auto_configure_identity(ws: Workspace) -> None:
-    g.configure_identity(ws.repo_dir)
-
-
 STEPS: list[Step] = [
     Step(
         key="init",
         title="0. 저장소 만들기 (git init)",
+        mode="template",
         explain=(
             "git으로 무언가를 관리하려면 먼저 그 폴더를 'git 저장소'로 만들어야 합니다.\n"
-            "아래 명령은 (1) 연습용 폴더로 이동하고 (2) 저장소를 초기화한 뒤 (3) 자동으로\n"
-            "결과를 확인합니다. 통째로 복사해서 터미널에 붙여넣으세요.\n"
             "(컴퓨터 설정에 따라 기본 브랜치 이름이 'master'가 될 수도 있어서, 이 튜토리얼에서는\n"
             "'main'으로 이름을 고정하는 옵션(-b main)을 함께 사용합니다)"
         ),
         command_hint=f"cd ~/.gitsim/current && git init -b main && {_CHECK_TAIL}",
         check=lambda ws: (ws.repo_dir / ".git").exists() and g.current_branch(ws.repo_dir) == "main",
-        on_success=_auto_configure_identity,
+    ),
+    Step(
+        key="identity",
+        title="1. 커밋 작성자 정보 설정하기 (git config)",
+        mode="compose",
+        explain=(
+            "모든 커밋에는 '누가 만들었는지' 기록이 남습니다. 아래는 명령의 형태만\n"
+            "보여드립니다 — 따옴표 안 문구를 실제 본인 이름/이메일로 바꿔서 두 줄 모두\n"
+            "직접 입력하세요. 예시 문구를 그대로 실행하면 통과되지 않습니다."
+        ),
+        command_hint=(
+            f'git config user.name "{PLACEHOLDER_NAME}"          (← 이 문구를 실제 이름으로 바꿔서 입력)\n'
+            f'  git config user.email "{PLACEHOLDER_EMAIL}@example.com"  (← 실제 이메일로 바꿔서 입력)'
+        ),
+        check=_identity_configured,
     ),
     Step(
         key="first-commit",
-        title="1. 첫 커밋 만들기 (add, commit)",
+        title="2. 첫 커밋 만들기 (add, commit)",
+        mode="compose",
         explain=(
             "git은 파일을 '스테이징(add)'한 뒤 '커밋(commit)'해야 변경 이력으로 저장합니다.\n"
-            "아무 파일이나 하나 만들고, 내용을 적은 뒤 커밋해보세요.\n"
-            "(방금 커밋 작성자 이름/이메일은 gitsim이 자동으로 설정해두었으니 신경 쓰지 않아도 됩니다)"
+            "아무 이름으로나 텍스트 파일을 하나 직접 만들고 원하는 내용을 적어보세요.\n"
+            "그 다음 아래 형태의 명령으로 스테이징하고, 커밋 메시지도 직접 지어서 커밋하세요."
         ),
-        command_hint=f'echo "hello git" > hello.txt && git add hello.txt && git commit -m "첫 커밋" && {_CHECK_TAIL}',
+        command_hint=(
+            "git add <방금 만든 파일 이름>\n"
+            '  git commit -m "<자유롭게 지은 커밋 메시지>"'
+        ),
         check=_has_commit,
     ),
     Step(
         key="branch",
-        title="2. 브랜치 만들고 이동하기",
+        title="3. 브랜치 만들고 이동하기",
+        mode="compose",
         explain=(
             "브랜치는 독립된 작업 공간입니다. 실험적인 작업을 할 때 main을 건드리지 않고\n"
-            "새 브랜치에서 작업할 수 있습니다."
+            "새 브랜치에서 작업할 수 있습니다. 브랜치 이름을 원하는 대로 하나 지어보세요."
         ),
-        command_hint=f"git checkout -b practice-branch && {_CHECK_TAIL}",
-        check=_on_branch,
+        command_hint="git checkout -b <원하는 브랜치 이름>",
+        check=_on_practice_branch,
+        on_success=_remember_branch,
     ),
     Step(
         key="branch-commit",
-        title="3. 브랜치에서 커밋 추가하기",
-        explain="practice-branch 위에서 파일을 수정하거나 새로 만들고 커밋하세요.",
-        command_hint=f'echo "branch work" >> hello.txt && git add -A && git commit -m "브랜치에서 작업" && {_CHECK_TAIL}',
+        title="4. 브랜치에서 커밋 추가하기",
+        mode="compose",
+        explain="지금 브랜치 위에서 파일을 수정하거나 새로 만들고, 커밋 메시지도 직접 지어서 커밋 하나를 추가하세요.",
+        command_hint=(
+            "git add <파일 이름>\n"
+            '  git commit -m "<자유롭게 지은 커밋 메시지>"'
+        ),
         check=_branch_ahead_of_main,
     ),
     Step(
         key="merge",
-        title="4. main으로 돌아와 병합하기 (merge)",
-        explain="main으로 돌아가서 practice-branch의 작업을 병합해보세요.",
-        command_hint=f"git checkout main && git merge practice-branch && {_CHECK_TAIL}",
+        title="5. main으로 돌아와 병합하기 (merge)",
+        mode="template",
+        explain="main으로 돌아가서 방금 만든 브랜치({practice_branch})의 작업을 병합해보세요.",
+        command_hint="git checkout main && git merge {practice_branch} && " + _CHECK_TAIL,
         check=_merged,
     ),
     Step(
         key="remote",
-        title="5. 원격 저장소 연결하고 업로드하기 (remote, push)",
+        title="6. 원격 저장소 연결하고 업로드하기 (remote, push)",
+        mode="compose",
         explain=(
             "실무에서는 GitHub 같은 원격 저장소에 코드를 올려 협업합니다.\n"
-            "이 튜토리얼에서는 워크스페이스 안의 remote.git 폴더가 '원격 저장소' 역할을 합니다.\n"
-            "아래 명령에 그 경로가 이미 채워져 있으니 그대로 복사-붙여넣기 하면 됩니다."
+            "이 튜토리얼에서는 아래 경로에 있는 로컬 저장소가 '원격 저장소' 역할을 합니다.\n"
+            "\n"
+            "    원격 저장소 경로: {remote_dir}\n"
+            "\n"
+            "이 경로를 사용해서, origin이라는 이름으로 원격을 등록하고 push 하는 명령을\n"
+            "직접 작성해보세요. (형태: git remote add <이름> <경로>, 그 다음 git push -u <이름> main)"
         ),
-        command_hint="git remote add origin {remote_dir} && git push -u origin main && " + _CHECK_TAIL,
+        command_hint="git remote add origin <위에 적힌 경로를 그대로 입력>\n  git push -u origin main",
         check=_remote_ok,
         on_enter=lambda ws: g.init_bare(ws.remote_dir) if not ws.remote_dir.exists() else None,
     ),
     Step(
         key="pull",
-        title="6. 원격의 변경 사항 받아오기 (fetch/pull)",
+        title="7. 원격의 변경 사항 받아오기 (fetch/pull)",
+        mode="template",
         explain=(
             "방금 동료가 원격 저장소에 teammate_note.txt 파일을 추가하고 push 했습니다.\n"
             "당신의 로컬 저장소에는 아직 이 파일이 없습니다. pull로 받아오세요."
@@ -238,17 +299,29 @@ def _ensure_entered(ws: Workspace, step: Step) -> None:
         ws.save_meta(**{f"entered_{step.key}": True})
 
 
+def _fill(ws: Workspace, text: str) -> str:
+    return text.replace("{remote_dir}", str(ws.remote_dir)).replace(
+        "{practice_branch}", ws.get("practice_branch") or "<앞에서 만든 브랜치>"
+    )
+
+
 def _step_block(ws: Workspace, idx: int, step: Step) -> str:
-    hint = step.command_hint.replace("{remote_dir}", str(ws.remote_dir))
-    explain = step.explain.replace("{remote_dir}", str(ws.remote_dir))
+    hint = _fill(ws, step.command_hint)
+    explain = _fill(ws, step.explain)
+    if step.mode == "template":
+        body = f"  아래 명령을 통째로 복사해서 터미널에 붙여넣으세요:\n\n  {hint}"
+    else:
+        body = (
+            f"  아래는 그대로 실행되는 완성된 명령이 아니라 '형태'입니다. 예시로 채워진 값이나\n"
+            f"  <...> 표시된 부분을 직접 정한 실제 값으로 바꿔서, 손으로 입력해보세요:\n\n  {hint}\n\n"
+            f"  다 입력했다면 `gitsim learn check` 를 실행해서 확인하세요."
+        )
     return f"""
 STEP {idx + 1}/{len(STEPS)}: {step.title}
 
 {explain}
 
-  아래 명령을 통째로 복사해서 터미널에 붙여넣으세요:
-
-  {hint}
+{body}
 
 (작업 폴더는 항상 ~/.gitsim/current 로 고정되어 있습니다. 실제 경로: {ws.repo_dir})
 """.strip()
@@ -281,16 +354,18 @@ def check_current_step(ws: Workspace) -> tuple[bool, str]:
     step = STEPS[idx]
     _ensure_entered(ws, step)
     if step.check(ws):
-        note = ""
         if step.on_success:
             step.on_success(ws)
-            if step.key == "init":
-                note = " (커밋에 필요한 이름/이메일도 자동으로 설정해두었습니다)"
         ws.save_meta(current_step=idx + 1)
         if idx + 1 >= len(STEPS):
             ws.save_meta(completed=True)
-        return True, f"'{step.title}' 단계를 완료했습니다!{note}"
-    return False, f"'{step.title}' 단계가 아직 완료되지 않았습니다. 위에 안내된 명령을 그대로 복사해서 실행해보세요."
+        return True, f"'{step.title}' 단계를 완료했습니다!"
+    if step.mode == "compose":
+        return False, (
+            f"'{step.title}' 단계가 아직 완료되지 않았습니다. "
+            "예시 문구를 그대로 실행하지 않았는지, 실제 값으로 바꿔서 입력했는지 확인해보세요."
+        )
+    return False, f"'{step.title}' 단계가 아직 완료되지 않았습니다. 위에 안내된 명령을 실행해보세요."
 
 
 def reset_tutorial(base_dir: Optional[Path] = None) -> Workspace:
