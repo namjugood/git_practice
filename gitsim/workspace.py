@@ -19,6 +19,7 @@ from typing import Any, Optional
 
 DEFAULT_ROOT = Path.home() / ".gitsim" / "workspaces"
 LAST_POINTER = Path.home() / ".gitsim" / "last_workspace"
+CURRENT_LINK = Path.home() / ".gitsim" / "current"
 
 
 @dataclass
@@ -83,6 +84,25 @@ def load_workspace(path: Path) -> Workspace:
 def _remember_last(path: Path) -> None:
     LAST_POINTER.parent.mkdir(parents=True, exist_ok=True)
     LAST_POINTER.write_text(str(path), encoding="utf-8")
+
+
+def point_current(ws: "Workspace") -> Optional[Path]:
+    """`~/.gitsim/current` 가 항상 지금 연습 중인 repo/ 를 가리키도록 갱신한다.
+
+    매번 타임스탬프가 붙은 워크스페이스 경로를 찾아 들어갈 필요 없이,
+    학습자가 항상 같은 경로(`cd ~/.gitsim/current`)로 이동할 수 있게 해준다.
+    심볼릭 링크를 만들 수 없는 환경(예: 일부 Windows 설정)에서는 조용히 건너뛴다.
+    """
+    try:
+        CURRENT_LINK.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            CURRENT_LINK.unlink()
+        except FileNotFoundError:
+            pass
+        CURRENT_LINK.symlink_to(ws.repo_dir, target_is_directory=True)
+        return CURRENT_LINK
+    except OSError:
+        return None
 
 
 def find_enclosing_workspace(start: Path) -> Optional[Path]:

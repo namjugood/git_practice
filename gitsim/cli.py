@@ -11,7 +11,7 @@ from gitsim import report as report_mod
 from gitsim import termcolor as t
 from gitsim import tutorial
 from gitsim.scenarios import get_scenario, list_scenarios
-from gitsim.workspace import DEFAULT_ROOT, create_workspace, resolve_workspace
+from gitsim.workspace import DEFAULT_ROOT, create_workspace, point_current, resolve_workspace
 
 
 def cmd_list(args: argparse.Namespace) -> int:
@@ -29,11 +29,12 @@ def cmd_start(args: argparse.Namespace) -> int:
     base_dir = Path(args.base_dir) if args.base_dir else None
     ws = create_workspace(scenario.id, base_dir=base_dir)
     scenario.setup(ws)
+    point_current(ws)
     print(t.heading(f"[{scenario.level}] {scenario.title}"))
     print(scenario.briefing(ws))
     print()
     print(t.dim(f"워크스페이스: {ws.path}"))
-    print(t.dim("완료했다면 해당 repo 디렉터리 안에서 `gitsim check` 를 실행하세요."))
+    print(t.dim("cd ~/.gitsim/current 로 이동해서 작업하세요. 완료했다면 `gitsim check` 를 실행하세요."))
     print(t.dim("막히면 `gitsim answer` 로 모범 답안을 볼 수 있습니다 (먼저 스스로 시도해보길 권장)."))
     return 0
 
@@ -104,6 +105,7 @@ def cmd_reset(args: argparse.Namespace) -> int:
     shutil.rmtree(ws.path)
     new_ws = create_workspace(scenario.id, base_dir=ws.path.parent)
     scenario.setup(new_ws)
+    point_current(new_ws)
     print(t.ok(f"시나리오를 초기 상태로 다시 만들었습니다: {new_ws.path}"))
     print(scenario.briefing(new_ws))
     return 0
@@ -116,10 +118,15 @@ def cmd_learn(args: argparse.Namespace) -> int:
     if sub == "reset":
         ws = tutorial.reset_tutorial(base_dir)
         print(t.ok(f"튜토리얼을 처음부터 다시 시작합니다: {ws.path}"))
-        print(tutorial.describe_current_step(ws))
+        print(tutorial.describe_current_step(ws, show_intro=True))
         return 0
 
     ws = tutorial.get_or_create(base_dir)
+
+    if sub == "intro":
+        print(t.heading("Git 입문 튜토리얼"))
+        print(tutorial.describe_current_step(ws, show_intro=True))
+        return 0
 
     if sub == "check":
         success, message = tutorial.check_current_step(ws)
@@ -180,7 +187,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_reset.set_defaults(func=cmd_reset)
 
     p_learn = sub.add_parser("learn", help="git 입문자를 위한 단계별 튜토리얼")
-    p_learn.add_argument("learn_action", nargs="?", choices=["show", "check", "reset"], default="show")
+    p_learn.add_argument("learn_action", nargs="?", choices=["show", "check", "reset", "intro"], default="show")
     p_learn.add_argument("--base-dir", default=None)
     p_learn.set_defaults(func=cmd_learn)
 

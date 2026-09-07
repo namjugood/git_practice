@@ -49,7 +49,7 @@ class DeletedBranchScenario(Scenario):
 2. 그 커밋을 가리키는 브랜치를 다시 만들어 작업을 복구하세요.
    (브랜치 이름은 `feature/login` 이 아니어도 되지만, 그대로 복구하는 것을 권장합니다)
 
-작업 위치: {ws.repo_dir}
+작업 위치: ~/.gitsim/current  (실제 경로: {ws.repo_dir})
 """.strip()
 
     def check(self, ws: Workspace) -> CheckResult:
@@ -68,12 +68,15 @@ class DeletedBranchScenario(Scenario):
 
     def diagnose(self, ws: Workspace) -> list[str]:
         findings = []
-        entries = g.reflog_entries(ws.repo_dir)
-        used_reflog_related = any(
-            e.action.lower().startswith("branch:") or e.action.lower().startswith("checkout: moving")
-            for e in entries
+        lost_commit = ws.get("lost_commit")
+        # `git branch <이름> <해시>` 로 만든 새 브랜치의 "Created from" 기록은 HEAD가 아니라
+        # 그 브랜치 자신의 reflog에 남으므로, 커밋을 되찾은 브랜치들의 reflog를 직접 확인한다.
+        owners = g.branches_containing(ws.repo_dir, lost_commit) if lost_commit else []
+        used_new_branch = any(
+            e.action.lower().startswith("branch: created")
+            for b in owners
+            for e in g.reflog_entries(ws.repo_dir, ref=b)
         )
-        used_new_branch = any(e.action.lower().startswith("branch: created") for e in entries)
         if used_new_branch:
             findings.append("`branch: Created from ...` reflog 기록이 확인됩니다. 브랜치를 새로 만들어 복구를 시도했습니다.")
         else:

@@ -50,7 +50,7 @@ class UndoPushedCommitScenario(Scenario):
    즉, `git reset` + `push --force` 조합은 사용하지 마세요. 동료의 히스토리와 어긋나게 됩니다.
 3. 되돌린 결과를 원격(origin/main)에 반영하세요.
 
-작업 위치: {ws.repo_dir}
+작업 위치: ~/.gitsim/current  (실제 경로: {ws.repo_dir})
 """.strip()
 
     def check(self, ws: Workspace) -> CheckResult:

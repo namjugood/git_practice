@@ -35,23 +35,39 @@ python3 -m gitsim --help
 
 ### 1) git이 처음이라면 — 입문 튜토리얼
 
+git도 터미널도 처음이어도 됩니다. `gitsim learn` 을 실행하면 터미널이 뭔지,
+git이 뭔지부터 설명해주고, 이후 각 단계마다 **복사해서 그대로 붙여넣기만 하면
+되는 명령**을 알려줍니다. 명령 끝에 다음 단계 확인이 자동으로 포함되어 있어서
+(`&& gitsim learn check`), 터미널과 안내 화면을 왔다 갔다 할 필요 없이 한 번
+붙여넣기 → 결과+다음 단계 안내, 를 반복하면 됩니다.
+
 ```bash
-gitsim learn            # 현재 단계 안내 (워크스페이스가 없으면 새로 만듦)
-cd ~/.gitsim/workspaces/tutorial-*/repo
-git init                # 안내대로 명령을 하나씩 따라 하기
-gitsim learn check      # 이번 단계를 완료했는지 검사, 통과하면 다음 단계 안내
+gitsim learn
 ```
+
+화면에 안내된 명령을 그대로 복사해서 터미널에 붙여넣으세요. 예를 들어
+첫 단계는 이런 식으로 나옵니다.
+
+```bash
+cd ~/.gitsim/current && git init -b main && gitsim learn check
+```
+
+`~/.gitsim/current` 는 지금 연습 중인 워크스페이스를 가리키는 고정 경로라서,
+매번 타임스탬프가 붙은 긴 경로를 찾아 들어갈 필요가 없습니다. 커밋 작성자
+이름/이메일(`git config`) 도 gitsim이 자동으로 설정해주므로 신경 쓰지 않아도
+됩니다.
 
 `init` → 첫 커밋 → 브랜치 생성/이동 → 브랜치에서 커밋 → main으로 merge →
 원격(origin) 연결 및 push → 동료가 올린 변경사항 pull 받기, 총 7단계로 구성되어
-있습니다. `gitsim learn reset` 으로 언제든 처음부터 다시 시작할 수 있습니다.
+있습니다. `gitsim learn reset` 으로 언제든 처음부터 다시 시작하거나,
+`gitsim learn intro` 로 처음 설명을 다시 볼 수 있습니다.
 
 ### 2) 실무 시나리오 훈련
 
 ```bash
 gitsim list                       # 연습 가능한 시나리오 목록
 gitsim start merge-conflict       # 워크스페이스 생성 + 상황(임무) 브리핑 출력
-cd <출력된 repo 경로>
+cd ~/.gitsim/current              # 항상 이 고정 경로로 이동하면 됩니다
 # ... 실제 git 명령으로 문제 해결 ...
 gitsim check                      # 성공 여부 판정 + REPORT.md 생성
 gitsim answer                     # (필요하면) 모범 답안 + 핵심 개념 보기
@@ -86,7 +102,9 @@ gitsim reset                      # 시나리오를 처음 상태로 재구성
 ## 워크스페이스 구조
 
 `gitsim start`/`gitsim learn` 은 기본적으로 `~/.gitsim/workspaces/` 아래에 시나리오별
-디렉터리를 만듭니다 (`--base-dir` 로 변경 가능).
+디렉터리를 만듭니다 (`--base-dir` 로 변경 가능). 매번 만들어질 때마다
+`~/.gitsim/current` 심볼릭 링크가 그 워크스페이스의 `repo/` 를 가리키도록 갱신되므로,
+실제로는 항상 `cd ~/.gitsim/current` 한 줄만 기억하면 됩니다.
 
 ```
 <workspace>/

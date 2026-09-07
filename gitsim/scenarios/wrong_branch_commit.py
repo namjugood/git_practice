@@ -45,7 +45,7 @@ class WrongBranchCommitScenario(Scenario):
 1. 이 2개의 커밋을 `feature/signup` 이라는 새 브랜치로 옮기세요. (커밋 내용은 보존)
 2. `main` 브랜치는 원래 상태(원격과 동일한 상태)로 되돌리세요.
 
-작업 위치: {ws.repo_dir}
+작업 위치: ~/.gitsim/current  (실제 경로: {ws.repo_dir})
 """.strip()
 
     def check(self, ws: Workspace) -> CheckResult:
@@ -73,14 +73,18 @@ class WrongBranchCommitScenario(Scenario):
 
     def diagnose(self, ws: Workspace) -> list[str]:
         findings = []
-        entries = g.reflog_entries(ws.repo_dir)
-        reset_used = any(e.action.lower().startswith("reset:") for e in entries)
-        branch_created = any(e.action.lower().startswith("branch: created") for e in entries)
+        first = ws.get("first_commit")
+        # `git branch <이름>` (체크아웃 없이 만들 때)의 "Created from" 기록은 HEAD가 아니라
+        # 그 브랜치 자신의 reflog에 남으므로, 커밋을 담고 있는 브랜치들의 reflog까지 함께
+        # 모아서 실제 발생 시각 순으로 비교해야 선후 관계를 정확히 판단할 수 있다.
+        owners = {b for b in g.branches_containing(ws.repo_dir, first) if b != "main"} if first else set()
+        events = g.reflog_events(ws.repo_dir, refs=["HEAD", "main", *owners])
+        reset_events = [e for e in events if e.action.lower().startswith("reset:")]
+        branch_events = [e for e in events if e.action.lower().startswith("branch: created")]
+        reset_used = bool(reset_events)
+        branch_created = bool(branch_events)
         if branch_created and reset_used:
-            actions = [e.action for e in entries]
-            branch_idx = next((i for i, e in enumerate(entries) if e.action.lower().startswith("branch: created")), None)
-            reset_idx = next((i for i, e in enumerate(entries) if e.action.lower().startswith("reset:")), None)
-            if branch_idx is not None and reset_idx is not None and branch_idx > reset_idx:
+            if branch_events[0].timestamp > reset_events[0].timestamp:
                 findings.append(
                     "경고: main을 먼저 reset 한 뒤에 브랜치를 만든 것으로 보입니다. "
                     "reset이 먼저 실행되면 커밋을 참조하는 브랜치가 없어져 유실 위험이 있습니다. "

@@ -8,6 +8,7 @@
 
 from __future__ import annotations
 
+import re
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
@@ -199,6 +200,46 @@ def reflog_entries(repo: Path, ref: str = "HEAD", max_count: int = 100) -> list[
         if len(parts) == 3:
             entries.append(ReflogEntry(selector=parts[0], short_hash=parts[1], action=parts[2]))
     return entries
+
+
+_TIMESTAMP_RE = re.compile(r"@\{(\d+)\}$")
+
+
+@dataclass
+class ReflogEvent:
+    timestamp: int
+    ref: str
+    short_hash: str
+    action: str
+
+
+def reflog_events(repo: Path, refs: list[str], max_count: int = 100) -> list[ReflogEvent]:
+    """여러 ref의 reflog를 모아 실제 발생 시각 순으로 정렬한 이벤트 목록을 반환한다.
+
+    `git branch <이름> <해시>` 처럼 체크아웃 없이 만든 브랜치의 "Created from" 기록은
+    HEAD가 아니라 그 브랜치 자신의 reflog에 남기 때문에, 여러 ref에 걸친 사건의
+    선후 관계를 판단하려면 각 ref의 reflog를 실제 타임스탬프 기준으로 합쳐야 한다.
+    """
+    events: list[ReflogEvent] = []
+    for ref in refs:
+        proc = run(
+            ["reflog", "show", f"-{max_count}", "--date=unix", "--format=%gd\x1f%h\x1f%gs", ref],
+            cwd=repo,
+            check=False,
+        )
+        if proc.returncode != 0:
+            continue
+        for line in proc.stdout.splitlines():
+            parts = line.split("\x1f")
+            if len(parts) != 3:
+                continue
+            selector, short_hash, action = parts
+            match = _TIMESTAMP_RE.search(selector)
+            if not match:
+                continue
+            events.append(ReflogEvent(timestamp=int(match.group(1)), ref=ref, short_hash=short_hash, action=action))
+    events.sort(key=lambda e: e.timestamp)
+    return events
 
 
 def bare_ref(bare_repo: Path, ref: str) -> Optional[str]:
