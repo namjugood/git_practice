@@ -62,11 +62,17 @@ def run(
     check: bool = True,
     input_text: Optional[str] = None,
 ) -> subprocess.CompletedProcess:
+    # git은 커밋 메시지/reflog 등을 항상 UTF-8로 저장하고 그대로 stdout에 내보낸다.
+    # `text=True`만 쓰면 파이썬이 OS 기본 코드페이지로 디코딩하는데, 한국어 Windows는
+    # 기본이 cp949라서 한글이 든 출력에서 UnicodeDecodeError가 난다. 인코딩을 명시해서
+    # 항상 UTF-8로 디코딩하고, 혹시 깨진 바이트가 있어도 죽지 않도록 대체 문자로 넘어간다.
     proc = subprocess.run(
         ["git", *args],
         cwd=str(cwd) if cwd else None,
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         input=input_text,
     )
     if check and proc.returncode != 0:
