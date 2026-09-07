@@ -3,6 +3,8 @@
 import os
 import sys
 
+from gitsim.i18n import t
+
 
 def _supports_color() -> bool:
     if os.environ.get("NO_COLOR"):
@@ -59,12 +61,12 @@ def sub(text: str) -> str:
 
 
 def ok(text: str) -> str:
-    return green(f"[성공] {text}")
+    return green(f"[{t('common.ok_label')}] {text}")
 
 
 def fail(text: str) -> str:
-    return red(f"[미완료] {text}")
+    return red(f"[{t('common.fail_label')}] {text}")
 
 
 def warn(text: str) -> str:
-    return yellow(f"[주의] {text}")
+    return yellow(f"[{t('common.warn_label')}] {text}")

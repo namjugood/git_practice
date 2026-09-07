@@ -19,6 +19,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Optional
 
+from gitsim.i18n import t as _
+
 DEFAULT_ROOT = Path.home() / ".gitsim" / "workspaces"
 LAST_POINTER = Path.home() / ".gitsim" / "last_workspace"
 CURRENT_LINK = Path.home() / ".gitsim" / "current"
@@ -77,7 +79,7 @@ def create_workspace(scenario_id: str, base_dir: Optional[Path] = None) -> Works
 def load_workspace(path: Path) -> Workspace:
     meta_file = path / ".gitsim.json"
     if not meta_file.exists():
-        raise FileNotFoundError(f"{path} 는 gitsim 워크스페이스가 아닙니다 (.gitsim.json 없음)")
+        raise FileNotFoundError(_("common.workspace_invalid", path=path))
     data = json.loads(meta_file.read_text(encoding="utf-8"))
     scenario_id = data.pop("scenario_id")
     return Workspace(path=path, scenario_id=scenario_id, meta=data)
@@ -161,10 +163,7 @@ def resolve_workspace(explicit_dir: Optional[str], cwd: Path) -> Workspace:
         if (path / ".gitsim.json").exists():
             return load_workspace(path)
 
-    raise FileNotFoundError(
-        "현재 위치에서 gitsim 워크스페이스를 찾을 수 없습니다. "
-        "연습 중이던 repo 디렉터리 안에서 실행하거나 --dir 옵션으로 경로를 지정하세요."
-    )
+    raise FileNotFoundError(_("common.workspace_not_found"))
 
 
 def list_workspaces(base_dir: Optional[Path] = None) -> list[Workspace]:

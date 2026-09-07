@@ -7,6 +7,9 @@
 그대로 복사-붙여넣기만 하면 손에 남는 게 없기 때문에, 이름/이메일/커밋 메시지/
 브랜치 이름처럼 의미가 있는 값은 학습자가 직접 채워 넣거나 지어내야 다음 단계로
 넘어갈 수 있게 만들었다.
+
+화면에 보이는 모든 문구는 `gitsim/messages/ko/tutorial.py` 에 있고, 이 파일은
+그 키를 참조만 한다 (다국어 지원을 위해 문구와 로직을 분리했다).
 """
 
 from __future__ import annotations
@@ -17,39 +20,13 @@ from pathlib import Path
 from typing import Callable, Optional
 
 from gitsim import gitutil as g
+from gitsim.i18n import t as _
 from gitsim.workspace import Workspace, create_workspace, list_workspaces, point_current, resolve_workspace
 
 TUTORIAL_ID = "tutorial"
 
-INTRO_TEXT = """
-처음이시군요! git도 터미널도 낯설어도 전혀 문제 없습니다. 아래 순서대로만 따라오세요.
-
-[1] 터미널이 뭔가요?
-    글자로 명령을 입력해서 컴퓨터에게 작업을 시키는 화면입니다.
-    - macOS: Spotlight(Cmd+Space)에서 "터미널(Terminal)" 검색 후 실행
-    - Windows: 시작 메뉴에서 "PowerShell" 검색 후 실행
-    - VS Code를 쓰고 있다면: 상단 메뉴 Terminal > New Terminal
-
-[2] git이 뭔가요?
-    파일이 바뀐 역사를 기록해두었다가, 언제든 예전 상태로 되돌리거나 여러 사람의
-    작업 내용을 합칠 수 있게 해주는 도구입니다. 그 기록이 저장되는 폴더를
-    "저장소(repository)"라고 부릅니다.
-
-[3] 앞으로 어떻게 진행되나요?
-    단계 중 일부는 그대로 복사해서 붙여넣으면 바로 실행되는 완성된 명령을
-    보여줍니다. 하지만 이름, 이메일, 커밋 메시지, 브랜치 이름처럼 "직접 정해야
-    하는 값"이 필요한 단계는 일부러 빈칸/설명만 드립니다. 그대로 복사하면
-    손에 남는 게 없기 때문입니다 — 명령의 형태를 보고 실제 값을 채워서 스스로
-    입력해보세요. 완료했는지는 `gitsim learn check` 로 확인합니다.
-
-[4] 시작하기 전에 딱 한 번만
-    터미널을 열고, 아래 명령으로 이 프로젝트를 설치해서 `gitsim` 명령을
-    바로 쓸 수 있게 해두세요. (프로젝트 폴더 안에서 한 번만 실행하면 됩니다)
-
-      pip install -e .
-
-    이제 아래 STEP 1부터 순서대로 진행하면 됩니다.
-""".strip()
+PLACEHOLDER_NAME = _("tutorial.placeholder.name")
+PLACEHOLDER_EMAIL = _("tutorial.placeholder.email")
 
 
 @dataclass
@@ -63,10 +40,7 @@ class Step:
     on_enter: Optional[Callable[[Workspace], None]] = None
     on_success: Optional[Callable[[Workspace], None]] = None
     diagnose: Optional[Callable[[Workspace], str]] = None
-
-
-PLACEHOLDER_NAME = "본인 이름"
-PLACEHOLDER_EMAIL = "본인 이메일"
+    requires_main: bool = True
 
 
 def _list_branches(ws: Workspace) -> list[str]:
@@ -75,27 +49,28 @@ def _list_branches(ws: Workspace) -> list[str]:
 
 
 def _require_main(ws: Workspace) -> Optional[str]:
-    """'main' 브랜치가 존재하는지 먼저 확인한다.
+    """'main' 브랜치가 존재하는지 확인한다.
 
-    main이 없으면 이후 단계 대부분이 원인 불명으로 실패하기 때문에, 다른 진단보다
-    먼저 이걸 확인해서 진짜 근본 원인을 짚어준다 (예: 아직 master를 main으로
-    바꾸지 않았거나, 도중에 main 브랜치 자체가 사라진 경우).
+    main이 없으면 이후 단계 대부분이 원인 불명으로 실패하기 때문에, 이 확인은
+    (각 단계의 개별 진단이 아니라) `check_current_step` 이 모든 단계에 대해 공통
+    선행 조건으로 딱 한 번 검사한다 — main이 사라진 문제는 그 사실을 발견한
+    바로 다음 `gitsim learn check` 에서 즉시 드러나야지, 한참 뒤(예: merge/remote
+    단계)에 가서야 알아채면 안 되기 때문이다.
     """
     if g.rev_parse(ws.repo_dir, "main") is not None:
         return None
+    if g.current_branch(ws.repo_dir) == "main":
+        # 아직 커밋이 하나도 없는 "unborn" 브랜치 상태다 (예: git init 직후).
+        # main이라는 이름 자체는 맞게 잡혀 있으므로 문제가 아니다 — 커밋이
+        # 없다는 사실 자체는 각 단계의 개별 check가 걸러낸다.
+        return None
     branches = _list_branches(ws)
     current = g.current_branch(ws.repo_dir)
-    branch_list = ", ".join(branches) if branches else "(브랜치가 하나도 없음)"
-    return (
-        f"이 저장소에는 'main' 이라는 이름의 브랜치가 없습니다. (지금 있는 브랜치: {branch_list} / 현재 위치: {current or '알 수 없음'})\n"
-        "이 튜토리얼은 기본 브랜치 이름이 반드시 'main' 이어야 진행됩니다. 아래 중 지금 상황에 맞는 것을 실행하세요.\n\n"
-        "  - 'master' 브랜치가 있고 그게 사실상 main 역할을 해야 한다면:\n"
-        "      git checkout master\n"
-        "      git branch -m main\n\n"
-        f"  - 지금 있는 브랜치({current or '<현재 브랜치>'})가 main 역할을 해야 한다면:\n"
-        f"      git branch -m {current or '<현재 브랜치>'} main\n\n"
-        "이름을 바꾼 뒤에는 이 저장소 위에서 만들었던 다른 브랜치(예: 연습용 브랜치)들이 "
-        "여전히 main을 기준으로 갈라져 있는지 `git log --oneline --graph --all` 로 확인해보세요."
+    branch_list = ", ".join(branches) if branches else _("tutorial.require_main.no_branch")
+    return _(
+        "tutorial.require_main",
+        branch_list=branch_list,
+        current=current or _("tutorial.require_main.unknown_position"),
     )
 
 
@@ -105,13 +80,9 @@ def _has_commit(ws: Workspace) -> bool:
 
 def _diagnose_init(ws: Workspace) -> str:
     if not (ws.repo_dir / ".git").exists():
-        return (
-            f"아직 이 폴더가 git 저장소로 초기화되지 않았습니다. 지금 명령을 실행한 폴더가\n"
-            f"  {ws.repo_dir}\n"
-            f"가 맞는지 확인한 뒤 `git init -b main` 을 실행하세요."
-        )
+        return _("tutorial.diagnose.init.not_repo", repo_dir=ws.repo_dir)
     branch = g.current_branch(ws.repo_dir)
-    return f"저장소는 만들어졌지만 현재 브랜치 이름이 'main'이 아니라 '{branch}' 입니다. `git branch -m main` 으로 이름을 바꾸세요."
+    return _("tutorial.diagnose.init.wrong_branch", branch=branch)
 
 
 def _identity_configured(ws: Workspace) -> bool:
@@ -130,26 +101,19 @@ def _diagnose_identity(ws: Workspace) -> str:
     name = g.run(["config", "--local", "user.name"], cwd=ws.repo_dir, check=False).stdout.strip()
     email = g.run(["config", "--local", "user.email"], cwd=ws.repo_dir, check=False).stdout.strip()
     if not name or not email:
-        return (
-            f"이 저장소에는 아직 이름/이메일이 설정되어 있지 않습니다 (지금 값: 이름='{name}', 이메일='{email}').\n"
-            "`git config user.name`, `git config user.email` 을 이 저장소 안에서 실행했는지 확인하세요."
-        )
+        return _("tutorial.diagnose.identity.not_set", name=name, email=email)
     if PLACEHOLDER_NAME in name or PLACEHOLDER_EMAIL in email:
-        return f"예시 문구가 그대로 남아있습니다 (이름='{name}', 이메일='{email}'). 실제 본인 이름/이메일로 바꿔서 다시 입력하세요."
+        return _("tutorial.diagnose.identity.placeholder", name=name, email=email)
     if "@" not in email:
-        return f"이메일에 '@' 가 없습니다 (지금 값: '{email}'). 이메일 형식으로 다시 입력하세요."
-    return f"현재 설정된 값은 이름='{name}', 이메일='{email}' 입니다. 정상으로 보이는데도 실패한다면 `gitsim learn check` 를 다시 실행해보세요."
+        return _("tutorial.diagnose.identity.bad_email", email=email)
+    return _("tutorial.diagnose.identity.looks_ok", name=name, email=email)
 
 
 def _diagnose_first_commit(ws: Workspace) -> str:
     status = g.status_porcelain(ws.repo_dir)
     if status.strip():
-        return (
-            "아직 커밋되지 않은 변경 사항이 있습니다:\n"
-            f"{status}\n"
-            "`git add <파일 이름>` 으로 스테이징한 뒤 `git commit -m \"메시지\"` 를 실행하세요."
-        )
-    return "아직 이 저장소에 커밋이 하나도 없습니다. 파일을 만들고 `git add`, `git commit -m \"메시지\"` 를 실행하세요."
+        return _("tutorial.diagnose.first_commit.uncommitted", status=status)
+    return _("tutorial.diagnose.first_commit.none")
 
 
 def _on_practice_branch(ws: Workspace) -> bool:
@@ -160,10 +124,10 @@ def _on_practice_branch(ws: Workspace) -> bool:
 def _diagnose_branch(ws: Workspace) -> str:
     branch = g.current_branch(ws.repo_dir)
     if branch == "main":
-        return "아직 main 브랜치에 그대로 있습니다. `git checkout -b <원하는 브랜치 이름>` 으로 새 브랜치를 만들고 그 브랜치로 이동해야 합니다."
+        return _("tutorial.diagnose.branch.still_main")
     if not branch:
-        return "지금 어떤 브랜치에도 있지 않은 상태(detached HEAD)로 보입니다. `git checkout -b <원하는 브랜치 이름>` 을 다시 실행하세요."
-    return f"현재 브랜치는 '{branch}' 로 보이는데도 실패했습니다. `gitsim learn check` 를 다시 실행해보세요."
+        return _("tutorial.diagnose.branch.detached")
+    return _("tutorial.diagnose.branch.looks_ok", branch=branch)
 
 
 def _remember_branch(ws: Workspace) -> None:
@@ -184,34 +148,19 @@ def _branch_ahead_of_main(ws: Workspace) -> bool:
 
 
 def _diagnose_branch_commit(ws: Workspace) -> str:
-    main_issue = _require_main(ws)
-    if main_issue:
-        return main_issue
     remembered = ws.get("practice_branch")
     current = g.current_branch(ws.repo_dir)
     if not remembered:
-        return "3번 단계에서 만든 브랜치 이름이 기록되어 있지 않습니다. `gitsim learn reset` 으로 처음부터 다시 시작해야 할 수 있습니다."
+        return _("tutorial.diagnose.branch_commit.no_remembered")
     if current != remembered:
-        return (
-            f"3번 단계에서 만든 브랜치는 '{remembered}' 인데, 지금 체크아웃되어 있는 브랜치는 "
-            f"'{current}' 입니다. `git checkout {remembered}` 로 그 브랜치로 돌아가서 커밋하세요."
-        )
+        return _("tutorial.diagnose.branch_commit.wrong_branch", remembered=remembered, current=current)
     branch_tip = g.rev_parse(ws.repo_dir, remembered)
     main_tip = g.rev_parse(ws.repo_dir, "main")
     if branch_tip == main_tip:
-        return f"'{remembered}' 브랜치가 main과 똑같아서 아직 새 커밋이 없는 것으로 보입니다. 파일을 수정/생성하고 `git add`, `git commit -m \"메시지\"` 를 실행하세요."
+        return _("tutorial.diagnose.branch_commit.no_new_commit", remembered=remembered)
     if not g.is_ancestor(ws.repo_dir, main_tip, branch_tip):
-        return (
-            f"'{remembered}' 브랜치에 커밋은 있지만, main의 최신 상태 위에 이어진 게 아니라 "
-            f"main과 서로 다른 방향으로 갈라져 있습니다. (브랜치를 지웠다가 main이 아닌 다른 "
-            f"지점에서 다시 만들었을 때 이런 상태가 됩니다.) 아래처럼 main을 기준으로 깨끗하게 "
-            f"다시 만들어보세요:\n"
-            f"  git checkout main\n"
-            f"  git branch -D {remembered}\n"
-            f"  git checkout -b {remembered}\n"
-            f"그런 다음 파일을 수정/생성하고 다시 커밋하세요."
-        )
-    return f"'{remembered}' 브랜치에 커밋은 있는 것 같은데도 실패했습니다. `gitsim learn check` 를 다시 실행해보세요."
+        return _("tutorial.diagnose.branch_commit.diverged", remembered=remembered)
+    return _("tutorial.diagnose.branch_commit.looks_ok", remembered=remembered)
 
 
 def _merged(ws: Workspace) -> bool:
@@ -226,14 +175,11 @@ def _merged(ws: Workspace) -> bool:
 
 
 def _diagnose_merge(ws: Workspace) -> str:
-    main_issue = _require_main(ws)
-    if main_issue:
-        return main_issue
-    branch = ws.get("practice_branch") or "<앞에서 만든 브랜치>"
+    branch = ws.get("practice_branch") or _("tutorial.fallback_branch_label")
     current = g.current_branch(ws.repo_dir)
     if current != "main":
-        return f"지금 브랜치가 'main'이 아니라 '{current}' 입니다. 먼저 `git checkout main` 을 실행하세요."
-    return f"main이 아직 '{branch}' 브랜치를 포함하고 있지 않습니다. `git merge {branch}` 를 실행하세요."
+        return _("tutorial.diagnose.merge.not_on_main", current=current)
+    return _("tutorial.diagnose.merge.not_merged", branch=branch)
 
 
 def _remote_ok(ws: Workspace) -> bool:
@@ -244,19 +190,16 @@ def _remote_ok(ws: Workspace) -> bool:
 
 
 def _diagnose_remote(ws: Workspace) -> str:
-    main_issue = _require_main(ws)
-    if main_issue:
-        return main_issue
     remotes = g.run(["remote"], cwd=ws.repo_dir, check=False).stdout.split()
     if "origin" not in remotes:
-        return f"'origin' 이라는 이름의 원격이 아직 등록되지 않았습니다. `git remote add origin {ws.remote_dir}` 을 실행하세요."
+        return _("tutorial.diagnose.remote.no_origin", remote_dir=ws.remote_dir)
     remote_main = g.bare_ref(ws.remote_dir, "refs/heads/main")
     if not remote_main:
-        return "origin은 등록되었지만 아직 main이 push되지 않았습니다. `git push -u origin main` 을 실행하세요."
+        return _("tutorial.diagnose.remote.not_pushed")
     local_main = g.rev_parse(ws.repo_dir, "main")
     if remote_main != local_main:
-        return "원격의 main이 로컬 main과 다릅니다. `git push -u origin main` 을 다시 실행해보세요."
-    return "origin 등록과 push까지는 되어 보이는데도 실패했습니다. `gitsim learn check` 를 다시 실행해보세요."
+        return _("tutorial.diagnose.remote.mismatch")
+    return _("tutorial.diagnose.remote.looks_ok")
 
 
 def _inject_teammate_commit(ws: Workspace) -> None:
@@ -283,124 +226,95 @@ def _pulled(ws: Workspace) -> bool:
 
 
 def _diagnose_pull(ws: Workspace) -> str:
-    main_issue = _require_main(ws)
-    if main_issue:
-        return main_issue
-    return "아직 동료의 커밋(teammate_note.txt)을 받아오지 않은 것 같습니다. `git pull origin main` 을 실행하세요."
+    return _("tutorial.diagnose.pull.not_pulled")
 
 
-STEPS: list[Step] = [
-    Step(
-        key="init",
-        title="0. 저장소 만들기 (git init)",
-        mode="template",
-        explain=(
-            "git으로 무언가를 관리하려면 먼저 그 폴더를 'git 저장소'로 만들어야 합니다.\n"
-            "(컴퓨터 설정에 따라 기본 브랜치 이름이 'master'가 될 수도 있어서, 이 튜토리얼에서는\n"
-            "'main'으로 이름을 고정하는 옵션(-b main)을 함께 사용합니다)"
+def _build_steps() -> list[Step]:
+    return [
+        Step(
+            key="init",
+            title=_("tutorial.step.init.title"),
+            mode="template",
+            explain=_("tutorial.step.init.explain"),
+            command_hint=_("tutorial.step.init.command_hint"),
+            check=lambda ws: (ws.repo_dir / ".git").exists() and g.current_branch(ws.repo_dir) == "main",
+            diagnose=_diagnose_init,
+            requires_main=False,  # main이 아직 만들어지기 전 단계이므로 선행 조건에서 제외
         ),
-        command_hint="git init -b main",
-        check=lambda ws: (ws.repo_dir / ".git").exists() and g.current_branch(ws.repo_dir) == "main",
-        diagnose=_diagnose_init,
-    ),
-    Step(
-        key="identity",
-        title="1. 커밋 작성자 정보 설정하기 (git config)",
-        mode="compose",
-        explain=(
-            "모든 커밋에는 '누가 만들었는지' 기록이 남습니다. 아래는 명령의 형태만\n"
-            "보여드립니다 — 따옴표 안 문구를 실제 본인 이름/이메일로 바꿔서 두 줄 모두\n"
-            "직접 입력하세요. 예시 문구를 그대로 실행하면 통과되지 않습니다."
+        Step(
+            key="identity",
+            title=_("tutorial.step.identity.title"),
+            mode="compose",
+            explain=_("tutorial.step.identity.explain"),
+            command_hint=_(
+                "tutorial.step.identity.command_hint",
+                placeholder_name=PLACEHOLDER_NAME,
+                placeholder_email=PLACEHOLDER_EMAIL,
+            ),
+            check=_identity_configured,
+            diagnose=_diagnose_identity,
         ),
-        command_hint=(
-            f'git config user.name "{PLACEHOLDER_NAME}"          (← 이 문구를 실제 이름으로 바꿔서 입력)\n'
-            f'  git config user.email "{PLACEHOLDER_EMAIL}@example.com"  (← 실제 이메일로 바꿔서 입력)'
+        Step(
+            key="first-commit",
+            title=_("tutorial.step.first_commit.title"),
+            mode="compose",
+            explain=_("tutorial.step.first_commit.explain"),
+            command_hint=_("tutorial.step.first_commit.command_hint"),
+            check=_has_commit,
+            diagnose=_diagnose_first_commit,
         ),
-        check=_identity_configured,
-        diagnose=_diagnose_identity,
-    ),
-    Step(
-        key="first-commit",
-        title="2. 첫 커밋 만들기 (add, commit)",
-        mode="compose",
-        explain=(
-            "git은 파일을 '스테이징(add)'한 뒤 '커밋(commit)'해야 변경 이력으로 저장합니다.\n"
-            "아무 이름으로나 텍스트 파일을 하나 직접 만들고 원하는 내용을 적어보세요.\n"
-            "그 다음 아래 형태의 명령으로 스테이징하고, 커밋 메시지도 직접 지어서 커밋하세요."
+        Step(
+            key="branch",
+            title=_("tutorial.step.branch.title"),
+            mode="compose",
+            explain=_("tutorial.step.branch.explain"),
+            command_hint=_("tutorial.step.branch.command_hint"),
+            check=_on_practice_branch,
+            on_success=_remember_branch,
+            diagnose=_diagnose_branch,
         ),
-        command_hint=(
-            "git add <방금 만든 파일 이름>\n"
-            '  git commit -m "<자유롭게 지은 커밋 메시지>"'
+        Step(
+            key="branch-commit",
+            title=_("tutorial.step.branch_commit.title"),
+            mode="compose",
+            explain=_("tutorial.step.branch_commit.explain"),
+            command_hint=_("tutorial.step.branch_commit.command_hint"),
+            check=_branch_ahead_of_main,
+            diagnose=_diagnose_branch_commit,
         ),
-        check=_has_commit,
-        diagnose=_diagnose_first_commit,
-    ),
-    Step(
-        key="branch",
-        title="3. 브랜치 만들고 이동하기",
-        mode="compose",
-        explain=(
-            "브랜치는 독립된 작업 공간입니다. 실험적인 작업을 할 때 main을 건드리지 않고\n"
-            "새 브랜치에서 작업할 수 있습니다. 브랜치 이름을 원하는 대로 하나 지어보세요."
+        Step(
+            key="merge",
+            title=_("tutorial.step.merge.title"),
+            mode="template",
+            explain=_("tutorial.step.merge.explain"),
+            command_hint=_("tutorial.step.merge.command_hint"),
+            check=_merged,
+            diagnose=_diagnose_merge,
         ),
-        command_hint="git checkout -b <원하는 브랜치 이름>",
-        check=_on_practice_branch,
-        on_success=_remember_branch,
-        diagnose=_diagnose_branch,
-    ),
-    Step(
-        key="branch-commit",
-        title="4. 브랜치에서 커밋 추가하기",
-        mode="compose",
-        explain="지금 브랜치 위에서 파일을 수정하거나 새로 만들고, 커밋 메시지도 직접 지어서 커밋 하나를 추가하세요.",
-        command_hint=(
-            "git add <파일 이름>\n"
-            '  git commit -m "<자유롭게 지은 커밋 메시지>"'
+        Step(
+            key="remote",
+            title=_("tutorial.step.remote.title"),
+            mode="compose",
+            explain=_("tutorial.step.remote.explain"),
+            command_hint=_("tutorial.step.remote.command_hint"),
+            check=_remote_ok,
+            on_enter=lambda ws: g.init_bare(ws.remote_dir) if not ws.remote_dir.exists() else None,
+            diagnose=_diagnose_remote,
         ),
-        check=_branch_ahead_of_main,
-        diagnose=_diagnose_branch_commit,
-    ),
-    Step(
-        key="merge",
-        title="5. main으로 돌아와 병합하기 (merge)",
-        mode="template",
-        explain="main으로 돌아가서 방금 만든 브랜치({practice_branch})의 작업을 병합해보세요.",
-        command_hint="git checkout main\n  git merge {practice_branch}",
-        check=_merged,
-        diagnose=_diagnose_merge,
-    ),
-    Step(
-        key="remote",
-        title="6. 원격 저장소 연결하고 업로드하기 (remote, push)",
-        mode="compose",
-        explain=(
-            "실무에서는 GitHub 같은 원격 저장소에 코드를 올려 협업합니다.\n"
-            "이 튜토리얼에서는 아래 경로에 있는 로컬 저장소가 '원격 저장소' 역할을 합니다.\n"
-            "\n"
-            "    원격 저장소 경로: {remote_dir}\n"
-            "\n"
-            "이 경로를 사용해서, origin이라는 이름으로 원격을 등록하고 push 하는 명령을\n"
-            "직접 작성해보세요. (형태: git remote add <이름> <경로>, 그 다음 git push -u <이름> main)"
+        Step(
+            key="pull",
+            title=_("tutorial.step.pull.title"),
+            mode="template",
+            explain=_("tutorial.step.pull.explain"),
+            command_hint=_("tutorial.step.pull.command_hint"),
+            check=_pulled,
+            on_enter=_inject_teammate_commit,
+            diagnose=_diagnose_pull,
         ),
-        command_hint="git remote add origin <위에 적힌 경로를 그대로 입력>\n  git push -u origin main",
-        check=_remote_ok,
-        on_enter=lambda ws: g.init_bare(ws.remote_dir) if not ws.remote_dir.exists() else None,
-        diagnose=_diagnose_remote,
-    ),
-    Step(
-        key="pull",
-        title="7. 원격의 변경 사항 받아오기 (fetch/pull)",
-        mode="template",
-        explain=(
-            "방금 동료가 원격 저장소에 teammate_note.txt 파일을 추가하고 push 했습니다.\n"
-            "당신의 로컬 저장소에는 아직 이 파일이 없습니다. pull로 받아오세요."
-        ),
-        command_hint="git pull origin main",
-        check=_pulled,
-        on_enter=_inject_teammate_commit,
-        diagnose=_diagnose_pull,
-    ),
-]
+    ]
+
+
+STEPS: list[Step] = _build_steps()
 
 
 def _tutorial_dirs_ready(ws: Workspace) -> None:
@@ -449,7 +363,7 @@ def _ensure_entered(ws: Workspace, step: Step) -> None:
 
 def _fill(ws: Workspace, text: str) -> str:
     return text.replace("{remote_dir}", str(ws.remote_dir)).replace(
-        "{practice_branch}", ws.get("practice_branch") or "<앞에서 만든 브랜치>"
+        "{practice_branch}", ws.get("practice_branch") or _("tutorial.fallback_branch_label")
     )
 
 
@@ -457,26 +371,25 @@ def _step_block(ws: Workspace, idx: int, step: Step) -> str:
     hint = _fill(ws, step.command_hint)
     explain = _fill(ws, step.explain)
     if step.mode == "template":
-        body = f"  아래 명령을 그대로 입력하세요 (한 줄씩 따로 입력해도 됩니다):\n\n  {hint}"
+        body = _("tutorial.step_block.template_body", hint=hint)
     else:
-        body = (
-            f"  아래는 그대로 실행되는 완성된 명령이 아니라 '형태'입니다. 예시로 채워진 값이나\n"
-            f"  <...> 표시된 부분을 직접 정한 실제 값으로 바꿔서, 손으로 입력해보세요:\n\n  {hint}"
-        )
-    return f"""
-STEP {idx + 1}/{len(STEPS)}: {step.title}
-
-[먼저 확인하세요] 지금 터미널이 연습용 폴더에 있나요?
-  cd ~/.gitsim/current
-  (위 경로로 이동이 안 되면, 아래 실제 경로로 대신 이동하세요)
-  실제 경로: {ws.repo_dir}
-
-{explain}
-
-{body}
-
-다 입력했다면 이 명령으로 확인하세요: gitsim learn check
-""".strip()
+        body = _("tutorial.step_block.compose_body", hint=hint)
+    return "\n".join(
+        [
+            _("tutorial.step_block.header", n=idx + 1, total=len(STEPS), title=step.title),
+            "",
+            _("tutorial.step_block.check_location_title"),
+            _("tutorial.step_block.cd_hint"),
+            _("tutorial.step_block.cd_fallback"),
+            _("tutorial.step_block.real_path", repo_dir=ws.repo_dir),
+            "",
+            explain,
+            "",
+            body,
+            "",
+            _("tutorial.step_block.final_hint"),
+        ]
+    )
 
 
 def describe_current_step(ws: Workspace, show_intro: bool = False) -> str:
@@ -484,15 +397,11 @@ def describe_current_step(ws: Workspace, show_intro: bool = False) -> str:
     idx = current_step_index(ws)
     prefix = ""
     if show_intro or (idx == 0 and not ws.get("intro_shown")):
-        prefix = INTRO_TEXT + "\n\n"
+        prefix = _("tutorial.intro") + "\n\n"
         ws.save_meta(intro_shown=True)
 
     if idx >= len(STEPS):
-        return prefix + (
-            "모든 튜토리얼 단계를 완료했습니다! 🎉\n"
-            "이제 `gitsim list` 로 실무 시나리오 목록을 확인하고 `gitsim start <시나리오id>` 로 "
-            "실전 연습을 시작해보세요."
-        )
+        return prefix + _("tutorial.completed")
     step = STEPS[idx]
     _ensure_entered(ws, step)
     return prefix + _step_block(ws, idx, step)
@@ -502,24 +411,30 @@ def check_current_step(ws: Workspace) -> tuple[bool, str]:
     point_current(ws)
     idx = current_step_index(ws)
     if idx >= len(STEPS):
-        return True, "이미 모든 단계를 완료했습니다."
+        return True, _("tutorial.check.already_done")
     step = STEPS[idx]
     _ensure_entered(ws, step)
+
+    if step.requires_main:
+        main_issue = _require_main(ws)
+        if main_issue:
+            return False, _("tutorial.check.failed", title=step.title, detail=main_issue)
+
     if step.check(ws):
         if step.on_success:
             step.on_success(ws)
         ws.save_meta(current_step=idx + 1)
         if idx + 1 >= len(STEPS):
             ws.save_meta(completed=True)
-        return True, f"'{step.title}' 단계를 완료했습니다!"
+        return True, _("tutorial.check.success", title=step.title)
 
     if step.diagnose:
         detail = step.diagnose(ws)
     elif step.mode == "compose":
-        detail = "예시 문구를 그대로 실행하지 않았는지, 실제 값으로 바꿔서 입력했는지 확인해보세요."
+        detail = _("tutorial.check.default_compose_hint")
     else:
-        detail = "위에 안내된 명령을 실행해보세요."
-    return False, f"'{step.title}' 단계가 아직 완료되지 않았습니다.\n\n[진단] {detail}"
+        detail = _("tutorial.check.default_template_hint")
+    return False, _("tutorial.check.failed", title=step.title, detail=detail)
 
 
 def reset_tutorial(base_dir: Optional[Path] = None) -> Workspace:

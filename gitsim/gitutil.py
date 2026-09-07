@@ -14,6 +14,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
+from gitsim.i18n import t as _
+
 
 class GitError(RuntimeError):
     def __init__(self, args: list[str], returncode: int, stdout: str, stderr: str):
@@ -22,7 +24,12 @@ class GitError(RuntimeError):
         self.stdout = stdout
         self.stderr = stderr
         super().__init__(
-            f"git {' '.join(args)} 실패 (exit={returncode}): {stderr.strip() or stdout.strip()}"
+            _(
+                "common.git_error",
+                args=" ".join(args),
+                returncode=returncode,
+                detail=stderr.strip() or stdout.strip(),
+            )
         )
 
 

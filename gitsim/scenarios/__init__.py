@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from gitsim.i18n import t as _
 from gitsim.scenarios.base import CheckResult, Scenario
 from gitsim.scenarios.deleted_branch import DeletedBranchScenario
 from gitsim.scenarios.diverged_history import DivergedHistoryScenario
@@ -38,7 +39,7 @@ def list_scenarios() -> list[Scenario]:
 def get_scenario(scenario_id: str) -> Scenario:
     if scenario_id not in _REGISTRY:
         available = ", ".join(ORDER)
-        raise KeyError(f"알 수 없는 시나리오 id '{scenario_id}'. 사용 가능한 목록: {available}")
+        raise KeyError(_("common.unknown_scenario", scenario_id=scenario_id, available=available))
     return _REGISTRY[scenario_id]
 
 
