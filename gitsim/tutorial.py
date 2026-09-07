@@ -62,6 +62,7 @@ class Step:
     check: Callable[[Workspace], bool]
     on_enter: Optional[Callable[[Workspace], None]] = None
     on_success: Optional[Callable[[Workspace], None]] = None
+    diagnose: Optional[Callable[[Workspace], str]] = None
 
 
 PLACEHOLDER_NAME = "본인 이름"
@@ -70,6 +71,17 @@ PLACEHOLDER_EMAIL = "본인 이메일"
 
 def _has_commit(ws: Workspace) -> bool:
     return g.rev_parse(ws.repo_dir, "HEAD") is not None
+
+
+def _diagnose_init(ws: Workspace) -> str:
+    if not (ws.repo_dir / ".git").exists():
+        return (
+            f"아직 이 폴더가 git 저장소로 초기화되지 않았습니다. 지금 명령을 실행한 폴더가\n"
+            f"  {ws.repo_dir}\n"
+            f"가 맞는지 확인한 뒤 `git init -b main` 을 실행하세요."
+        )
+    branch = g.current_branch(ws.repo_dir)
+    return f"저장소는 만들어졌지만 현재 브랜치 이름이 'main'이 아니라 '{branch}' 입니다. `git branch -m main` 으로 이름을 바꾸세요."
 
 
 def _identity_configured(ws: Workspace) -> bool:
@@ -84,9 +96,44 @@ def _identity_configured(ws: Workspace) -> bool:
     return "@" in email
 
 
+def _diagnose_identity(ws: Workspace) -> str:
+    name = g.run(["config", "--local", "user.name"], cwd=ws.repo_dir, check=False).stdout.strip()
+    email = g.run(["config", "--local", "user.email"], cwd=ws.repo_dir, check=False).stdout.strip()
+    if not name or not email:
+        return (
+            f"이 저장소에는 아직 이름/이메일이 설정되어 있지 않습니다 (지금 값: 이름='{name}', 이메일='{email}').\n"
+            "`git config user.name`, `git config user.email` 을 이 저장소 안에서 실행했는지 확인하세요."
+        )
+    if PLACEHOLDER_NAME in name or PLACEHOLDER_EMAIL in email:
+        return f"예시 문구가 그대로 남아있습니다 (이름='{name}', 이메일='{email}'). 실제 본인 이름/이메일로 바꿔서 다시 입력하세요."
+    if "@" not in email:
+        return f"이메일에 '@' 가 없습니다 (지금 값: '{email}'). 이메일 형식으로 다시 입력하세요."
+    return f"현재 설정된 값은 이름='{name}', 이메일='{email}' 입니다. 정상으로 보이는데도 실패한다면 `gitsim learn check` 를 다시 실행해보세요."
+
+
+def _diagnose_first_commit(ws: Workspace) -> str:
+    status = g.status_porcelain(ws.repo_dir)
+    if status.strip():
+        return (
+            "아직 커밋되지 않은 변경 사항이 있습니다:\n"
+            f"{status}\n"
+            "`git add <파일 이름>` 으로 스테이징한 뒤 `git commit -m \"메시지\"` 를 실행하세요."
+        )
+    return "아직 이 저장소에 커밋이 하나도 없습니다. 파일을 만들고 `git add`, `git commit -m \"메시지\"` 를 실행하세요."
+
+
 def _on_practice_branch(ws: Workspace) -> bool:
     branch = g.current_branch(ws.repo_dir)
     return bool(branch) and branch != "main"
+
+
+def _diagnose_branch(ws: Workspace) -> str:
+    branch = g.current_branch(ws.repo_dir)
+    if branch == "main":
+        return "아직 main 브랜치에 그대로 있습니다. `git checkout -b <원하는 브랜치 이름>` 으로 새 브랜치를 만들고 그 브랜치로 이동해야 합니다."
+    if not branch:
+        return "지금 어떤 브랜치에도 있지 않은 상태(detached HEAD)로 보입니다. `git checkout -b <원하는 브랜치 이름>` 을 다시 실행하세요."
+    return f"현재 브랜치는 '{branch}' 로 보이는데도 실패했습니다. `gitsim learn check` 를 다시 실행해보세요."
 
 
 def _remember_branch(ws: Workspace) -> None:
@@ -106,6 +153,23 @@ def _branch_ahead_of_main(ws: Workspace) -> bool:
     return g.is_ancestor(ws.repo_dir, main_tip, branch_tip)
 
 
+def _diagnose_branch_commit(ws: Workspace) -> str:
+    remembered = ws.get("practice_branch")
+    current = g.current_branch(ws.repo_dir)
+    if not remembered:
+        return "3번 단계에서 만든 브랜치 이름이 기록되어 있지 않습니다. `gitsim learn reset` 으로 처음부터 다시 시작해야 할 수 있습니다."
+    if current != remembered:
+        return (
+            f"3번 단계에서 만든 브랜치는 '{remembered}' 인데, 지금 체크아웃되어 있는 브랜치는 "
+            f"'{current}' 입니다. `git checkout {remembered}` 로 그 브랜치로 돌아가서 커밋하세요."
+        )
+    branch_tip = g.rev_parse(ws.repo_dir, remembered)
+    main_tip = g.rev_parse(ws.repo_dir, "main")
+    if branch_tip == main_tip:
+        return f"'{remembered}' 브랜치가 main과 똑같아서 아직 새 커밋이 없는 것으로 보입니다. 파일을 수정/생성하고 `git add`, `git commit -m \"메시지\"` 를 실행하세요."
+    return f"'{remembered}' 브랜치에 커밋은 있는 것 같은데도 실패했습니다. `gitsim learn check` 를 다시 실행해보세요."
+
+
 def _merged(ws: Workspace) -> bool:
     branch = ws.get("practice_branch")
     if not branch:
@@ -117,11 +181,32 @@ def _merged(ws: Workspace) -> bool:
     return g.is_ancestor(ws.repo_dir, branch_tip, main_tip)
 
 
+def _diagnose_merge(ws: Workspace) -> str:
+    branch = ws.get("practice_branch") or "<앞에서 만든 브랜치>"
+    current = g.current_branch(ws.repo_dir)
+    if current != "main":
+        return f"지금 브랜치가 'main'이 아니라 '{current}' 입니다. 먼저 `git checkout main` 을 실행하세요."
+    return f"main이 아직 '{branch}' 브랜치를 포함하고 있지 않습니다. `git merge {branch}` 를 실행하세요."
+
+
 def _remote_ok(ws: Workspace) -> bool:
     remote_main = g.bare_ref(ws.remote_dir, "refs/heads/main")
     local_main = g.rev_parse(ws.repo_dir, "main")
     remotes = g.run(["remote"], cwd=ws.repo_dir, check=False).stdout.split()
     return bool(remote_main) and remote_main == local_main and "origin" in remotes
+
+
+def _diagnose_remote(ws: Workspace) -> str:
+    remotes = g.run(["remote"], cwd=ws.repo_dir, check=False).stdout.split()
+    if "origin" not in remotes:
+        return f"'origin' 이라는 이름의 원격이 아직 등록되지 않았습니다. `git remote add origin {ws.remote_dir}` 을 실행하세요."
+    remote_main = g.bare_ref(ws.remote_dir, "refs/heads/main")
+    if not remote_main:
+        return "origin은 등록되었지만 아직 main이 push되지 않았습니다. `git push -u origin main` 을 실행하세요."
+    local_main = g.rev_parse(ws.repo_dir, "main")
+    if remote_main != local_main:
+        return "원격의 main이 로컬 main과 다릅니다. `git push -u origin main` 을 다시 실행해보세요."
+    return "origin 등록과 push까지는 되어 보이는데도 실패했습니다. `gitsim learn check` 를 다시 실행해보세요."
 
 
 def _inject_teammate_commit(ws: Workspace) -> None:
@@ -147,6 +232,10 @@ def _pulled(ws: Workspace) -> bool:
     return bool(local_main) and g.is_ancestor(ws.repo_dir, marker_commit, local_main)
 
 
+def _diagnose_pull(ws: Workspace) -> str:
+    return "아직 동료의 커밋(teammate_note.txt)을 받아오지 않은 것 같습니다. `git pull origin main` 을 실행하세요."
+
+
 STEPS: list[Step] = [
     Step(
         key="init",
@@ -159,6 +248,7 @@ STEPS: list[Step] = [
         ),
         command_hint="git init -b main",
         check=lambda ws: (ws.repo_dir / ".git").exists() and g.current_branch(ws.repo_dir) == "main",
+        diagnose=_diagnose_init,
     ),
     Step(
         key="identity",
@@ -174,6 +264,7 @@ STEPS: list[Step] = [
             f'  git config user.email "{PLACEHOLDER_EMAIL}@example.com"  (← 실제 이메일로 바꿔서 입력)'
         ),
         check=_identity_configured,
+        diagnose=_diagnose_identity,
     ),
     Step(
         key="first-commit",
@@ -189,6 +280,7 @@ STEPS: list[Step] = [
             '  git commit -m "<자유롭게 지은 커밋 메시지>"'
         ),
         check=_has_commit,
+        diagnose=_diagnose_first_commit,
     ),
     Step(
         key="branch",
@@ -201,6 +293,7 @@ STEPS: list[Step] = [
         command_hint="git checkout -b <원하는 브랜치 이름>",
         check=_on_practice_branch,
         on_success=_remember_branch,
+        diagnose=_diagnose_branch,
     ),
     Step(
         key="branch-commit",
@@ -212,6 +305,7 @@ STEPS: list[Step] = [
             '  git commit -m "<자유롭게 지은 커밋 메시지>"'
         ),
         check=_branch_ahead_of_main,
+        diagnose=_diagnose_branch_commit,
     ),
     Step(
         key="merge",
@@ -220,6 +314,7 @@ STEPS: list[Step] = [
         explain="main으로 돌아가서 방금 만든 브랜치({practice_branch})의 작업을 병합해보세요.",
         command_hint="git checkout main\n  git merge {practice_branch}",
         check=_merged,
+        diagnose=_diagnose_merge,
     ),
     Step(
         key="remote",
@@ -237,6 +332,7 @@ STEPS: list[Step] = [
         command_hint="git remote add origin <위에 적힌 경로를 그대로 입력>\n  git push -u origin main",
         check=_remote_ok,
         on_enter=lambda ws: g.init_bare(ws.remote_dir) if not ws.remote_dir.exists() else None,
+        diagnose=_diagnose_remote,
     ),
     Step(
         key="pull",
@@ -249,6 +345,7 @@ STEPS: list[Step] = [
         command_hint="git pull origin main",
         check=_pulled,
         on_enter=_inject_teammate_commit,
+        diagnose=_diagnose_pull,
     ),
 ]
 
@@ -362,12 +459,14 @@ def check_current_step(ws: Workspace) -> tuple[bool, str]:
         if idx + 1 >= len(STEPS):
             ws.save_meta(completed=True)
         return True, f"'{step.title}' 단계를 완료했습니다!"
-    if step.mode == "compose":
-        return False, (
-            f"'{step.title}' 단계가 아직 완료되지 않았습니다. "
-            "예시 문구를 그대로 실행하지 않았는지, 실제 값으로 바꿔서 입력했는지 확인해보세요."
-        )
-    return False, f"'{step.title}' 단계가 아직 완료되지 않았습니다. 위에 안내된 명령을 실행해보세요."
+
+    if step.diagnose:
+        detail = step.diagnose(ws)
+    elif step.mode == "compose":
+        detail = "예시 문구를 그대로 실행하지 않았는지, 실제 값으로 바꿔서 입력했는지 확인해보세요."
+    else:
+        detail = "위에 안내된 명령을 실행해보세요."
+    return False, f"'{step.title}' 단계가 아직 완료되지 않았습니다.\n\n[진단] {detail}"
 
 
 def reset_tutorial(base_dir: Optional[Path] = None) -> Workspace:
