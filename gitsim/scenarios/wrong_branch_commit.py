@@ -45,7 +45,8 @@ class WrongBranchCommitScenario(Scenario):
 1. 이 2개의 커밋을 `feature/signup` 이라는 새 브랜치로 옮기세요. (커밋 내용은 보존)
 2. `main` 브랜치는 원래 상태(원격과 동일한 상태)로 되돌리세요.
 
-작업 위치: ~/.gitsim/current  (실제 경로: {ws.repo_dir})
+작업 위치: cd ~/.gitsim/current
+  (이 경로로 이동이 안 되면, 아래 실제 경로를 대신 사용하세요: {ws.repo_dir})
 """.strip()
 
     def check(self, ws: Workspace) -> CheckResult:

@@ -49,7 +49,8 @@ class DeletedBranchScenario(Scenario):
 2. 그 커밋을 가리키는 브랜치를 다시 만들어 작업을 복구하세요.
    (브랜치 이름은 `feature/login` 이 아니어도 되지만, 그대로 복구하는 것을 권장합니다)
 
-작업 위치: ~/.gitsim/current  (실제 경로: {ws.repo_dir})
+작업 위치: cd ~/.gitsim/current
+  (이 경로로 이동이 안 되면, 아래 실제 경로를 대신 사용하세요: {ws.repo_dir})
 """.strip()
 
     def check(self, ws: Workspace) -> CheckResult:

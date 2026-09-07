@@ -147,8 +147,6 @@ def _pulled(ws: Workspace) -> bool:
     return bool(local_main) and g.is_ancestor(ws.repo_dir, marker_commit, local_main)
 
 
-_CHECK_TAIL = "gitsim learn check"
-
 STEPS: list[Step] = [
     Step(
         key="init",
@@ -159,7 +157,7 @@ STEPS: list[Step] = [
             "(컴퓨터 설정에 따라 기본 브랜치 이름이 'master'가 될 수도 있어서, 이 튜토리얼에서는\n"
             "'main'으로 이름을 고정하는 옵션(-b main)을 함께 사용합니다)"
         ),
-        command_hint=f"cd ~/.gitsim/current && git init -b main && {_CHECK_TAIL}",
+        command_hint="git init -b main",
         check=lambda ws: (ws.repo_dir / ".git").exists() and g.current_branch(ws.repo_dir) == "main",
     ),
     Step(
@@ -220,7 +218,7 @@ STEPS: list[Step] = [
         title="5. main으로 돌아와 병합하기 (merge)",
         mode="template",
         explain="main으로 돌아가서 방금 만든 브랜치({practice_branch})의 작업을 병합해보세요.",
-        command_hint="git checkout main && git merge {practice_branch} && " + _CHECK_TAIL,
+        command_hint="git checkout main\n  git merge {practice_branch}",
         check=_merged,
     ),
     Step(
@@ -248,7 +246,7 @@ STEPS: list[Step] = [
             "방금 동료가 원격 저장소에 teammate_note.txt 파일을 추가하고 push 했습니다.\n"
             "당신의 로컬 저장소에는 아직 이 파일이 없습니다. pull로 받아오세요."
         ),
-        command_hint=f"git pull origin main && {_CHECK_TAIL}",
+        command_hint="git pull origin main",
         check=_pulled,
         on_enter=_inject_teammate_commit,
     ),
@@ -309,21 +307,25 @@ def _step_block(ws: Workspace, idx: int, step: Step) -> str:
     hint = _fill(ws, step.command_hint)
     explain = _fill(ws, step.explain)
     if step.mode == "template":
-        body = f"  아래 명령을 통째로 복사해서 터미널에 붙여넣으세요:\n\n  {hint}"
+        body = f"  아래 명령을 그대로 입력하세요 (한 줄씩 따로 입력해도 됩니다):\n\n  {hint}"
     else:
         body = (
             f"  아래는 그대로 실행되는 완성된 명령이 아니라 '형태'입니다. 예시로 채워진 값이나\n"
-            f"  <...> 표시된 부분을 직접 정한 실제 값으로 바꿔서, 손으로 입력해보세요:\n\n  {hint}\n\n"
-            f"  다 입력했다면 `gitsim learn check` 를 실행해서 확인하세요."
+            f"  <...> 표시된 부분을 직접 정한 실제 값으로 바꿔서, 손으로 입력해보세요:\n\n  {hint}"
         )
     return f"""
 STEP {idx + 1}/{len(STEPS)}: {step.title}
+
+[먼저 확인하세요] 지금 터미널이 연습용 폴더에 있나요?
+  cd ~/.gitsim/current
+  (위 경로로 이동이 안 되면, 아래 실제 경로로 대신 이동하세요)
+  실제 경로: {ws.repo_dir}
 
 {explain}
 
 {body}
 
-(작업 폴더는 항상 ~/.gitsim/current 로 고정되어 있습니다. 실제 경로: {ws.repo_dir})
+다 입력했다면 이 명령으로 확인하세요: gitsim learn check
 """.strip()
 
 

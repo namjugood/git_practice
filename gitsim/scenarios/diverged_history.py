@@ -50,7 +50,8 @@ class DivergedHistoryScenario(Scenario):
    - 절대로 `git push --force` 로 팀원의 커밋을 덮어쓰지 마세요.
 3. 두 커밋이 모두 반영된 상태로 다시 push 하세요.
 
-작업 위치: ~/.gitsim/current  (실제 경로: {ws.repo_dir})
+작업 위치: cd ~/.gitsim/current
+  (이 경로로 이동이 안 되면, 아래 실제 경로를 대신 사용하세요: {ws.repo_dir})
 """.strip()
 
     def check(self, ws: Workspace) -> CheckResult:

@@ -12,6 +12,8 @@
 from __future__ import annotations
 
 import json
+import os
+import subprocess
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -86,23 +88,53 @@ def _remember_last(path: Path) -> None:
     LAST_POINTER.write_text(str(path), encoding="utf-8")
 
 
+def _clear_current_link() -> None:
+    if CURRENT_LINK.is_symlink():
+        CURRENT_LINK.unlink()
+    elif CURRENT_LINK.exists():
+        # Windows 디렉터리 접합점(junction)은 심볼릭 링크로 보고되지 않고, 일반 unlink()로
+        # 지울 수 없다 — 빈 디렉터리를 지우는 rmdir()로 접합점 자체만 제거해야 한다
+        # (대상 폴더 내용은 건드리지 않는다).
+        try:
+            CURRENT_LINK.rmdir()
+        except OSError:
+            pass
+
+
 def point_current(ws: "Workspace") -> Optional[Path]:
     """`~/.gitsim/current` 가 항상 지금 연습 중인 repo/ 를 가리키도록 갱신한다.
 
     매번 타임스탬프가 붙은 워크스페이스 경로를 찾아 들어갈 필요 없이,
     학습자가 항상 같은 경로(`cd ~/.gitsim/current`)로 이동할 수 있게 해준다.
-    심볼릭 링크를 만들 수 없는 환경(예: 일부 Windows 설정)에서는 조용히 건너뛴다.
+
+    일반 심볼릭 링크는 관리자 권한/개발자 모드 없이는 Windows에서 만들 수 없는 경우가
+    많다. 그런 경우 관리자 권한이 필요 없는 NTFS 디렉터리 접합점(junction, `mklink /J`)
+    으로 대신 시도한다. 둘 다 실패하면 None을 반환하니, 호출 쪽에서 실제 경로를 함께
+    안내해야 한다.
     """
     try:
         CURRENT_LINK.parent.mkdir(parents=True, exist_ok=True)
-        try:
-            CURRENT_LINK.unlink()
-        except FileNotFoundError:
-            pass
+    except OSError:
+        return None
+
+    _clear_current_link()
+
+    try:
         CURRENT_LINK.symlink_to(ws.repo_dir, target_is_directory=True)
         return CURRENT_LINK
     except OSError:
-        return None
+        pass
+
+    if os.name == "nt":
+        proc = subprocess.run(
+            ["cmd", "/c", "mklink", "/J", str(CURRENT_LINK), str(ws.repo_dir)],
+            capture_output=True,
+            text=True,
+        )
+        if proc.returncode == 0:
+            return CURRENT_LINK
+
+    return None
 
 
 def find_enclosing_workspace(start: Path) -> Optional[Path]:

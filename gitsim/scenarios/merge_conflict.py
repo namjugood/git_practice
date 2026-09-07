@@ -62,7 +62,8 @@ class MergeConflictScenario(Scenario):
    (한쪽 것만 그대로 선택하지 말고, 내용을 실제로 합치는 것을 권장합니다)
 4. 충돌 해결을 완료하고 커밋한 뒤, 원격(origin/main)에 push 하세요.
 
-작업 위치: ~/.gitsim/current  (실제 경로: {ws.repo_dir})
+작업 위치: cd ~/.gitsim/current
+  (이 경로로 이동이 안 되면, 아래 실제 경로를 대신 사용하세요: {ws.repo_dir})
 """.strip()
 
     def check(self, ws: Workspace) -> CheckResult:
