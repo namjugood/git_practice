@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import argparse
-import shutil
 import sys
 from pathlib import Path
 from typing import Optional
@@ -103,7 +102,7 @@ def cmd_reset(args: argparse.Namespace) -> int:
         print(t.ok(_("cli.reset.tutorial_done", path=new_ws.path)))
         return 0
     scenario = get_scenario(ws.scenario_id)
-    shutil.rmtree(ws.path)
+    g.force_rmtree(ws.path)
     new_ws = create_workspace(scenario.id, base_dir=ws.path.parent)
     scenario.setup(new_ws)
     point_current(new_ws)

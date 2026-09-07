@@ -8,13 +8,36 @@
 
 from __future__ import annotations
 
+import os
 import re
+import shutil
+import stat
 import subprocess
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
 from gitsim.i18n import t as _
+
+
+def _clear_readonly_and_retry(func, target_path, exc) -> None:
+    # git은 .git/objects/ 안의 오브젝트 파일을 읽기 전용으로 만들어 실수로 내용이
+    # 바뀌는 것을 막는다. Windows에서는 파일 자체가 읽기 전용이면 그 파일이 든
+    # 폴더 권한과 무관하게 삭제가 거부되므로, 지우기 전에 속성을 먼저 풀어줘야 한다.
+    try:
+        os.chmod(target_path, stat.S_IWRITE)
+        func(target_path)
+    except OSError:
+        pass  # 워크스페이스 정리는 최선을 다하는 수준이면 충분하다.
+
+
+def force_rmtree(path: Path) -> None:
+    """git 저장소가 들어있는 디렉터리를 안전하게(읽기 전용 오브젝트 포함) 지운다."""
+    if sys.version_info >= (3, 12):
+        shutil.rmtree(path, onexc=_clear_readonly_and_retry)
+    else:
+        shutil.rmtree(path, onerror=lambda func, p, exc_info: _clear_readonly_and_retry(func, p, exc_info[1]))
 
 
 class GitError(RuntimeError):

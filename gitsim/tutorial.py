@@ -14,7 +14,6 @@
 
 from __future__ import annotations
 
-import shutil
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Optional
@@ -207,13 +206,13 @@ def _inject_teammate_commit(ws: Workspace) -> None:
         return
     tmp_clone = ws.path / "_tutorial_teammate_tmp"
     if tmp_clone.exists():
-        shutil.rmtree(tmp_clone)
+        g.force_rmtree(tmp_clone)
     g.clone(ws.remote_dir, tmp_clone)
     g.write_file(tmp_clone, "teammate_note.txt", "동료가 원격에 추가한 파일입니다.\n")
     g.add_all(tmp_clone)
     marker_commit = g.commit(tmp_clone, "동료: teammate_note.txt 추가")
     g.run(["push", "origin", "main"], cwd=tmp_clone)
-    shutil.rmtree(tmp_clone)
+    g.force_rmtree(tmp_clone)
     ws.save_meta(teammate_marker_commit=marker_commit)
 
 
@@ -440,5 +439,5 @@ def check_current_step(ws: Workspace) -> tuple[bool, str]:
 def reset_tutorial(base_dir: Optional[Path] = None) -> Workspace:
     existing = _find_active(base_dir)
     if existing and existing.path.exists():
-        shutil.rmtree(existing.path)
+        g.force_rmtree(existing.path)
     return start_new(base_dir)
