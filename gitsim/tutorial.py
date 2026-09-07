@@ -167,6 +167,17 @@ def _diagnose_branch_commit(ws: Workspace) -> str:
     main_tip = g.rev_parse(ws.repo_dir, "main")
     if branch_tip == main_tip:
         return f"'{remembered}' 브랜치가 main과 똑같아서 아직 새 커밋이 없는 것으로 보입니다. 파일을 수정/생성하고 `git add`, `git commit -m \"메시지\"` 를 실행하세요."
+    if not g.is_ancestor(ws.repo_dir, main_tip, branch_tip):
+        return (
+            f"'{remembered}' 브랜치에 커밋은 있지만, main의 최신 상태 위에 이어진 게 아니라 "
+            f"main과 서로 다른 방향으로 갈라져 있습니다. (브랜치를 지웠다가 main이 아닌 다른 "
+            f"지점에서 다시 만들었을 때 이런 상태가 됩니다.) 아래처럼 main을 기준으로 깨끗하게 "
+            f"다시 만들어보세요:\n"
+            f"  git checkout main\n"
+            f"  git branch -D {remembered}\n"
+            f"  git checkout -b {remembered}\n"
+            f"그런 다음 파일을 수정/생성하고 다시 커밋하세요."
+        )
     return f"'{remembered}' 브랜치에 커밋은 있는 것 같은데도 실패했습니다. `gitsim learn check` 를 다시 실행해보세요."
 
 
