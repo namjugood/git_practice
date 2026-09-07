@@ -3,11 +3,24 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+import pytest
+
 from gitsim import gitutil as g
 from gitsim import tutorial
+from gitsim.workspace import practice_branch_name
 
 
-def test_tutorial_full_walkthrough(tmp_path):
+@pytest.fixture(autouse=True)
+def fake_registered_remote(tmp_path, monkeypatch):
+    """실제 GitHub 저장소 대신, 로컬 bare 저장소를 `gitsim remote set`으로 등록한 것처럼
+    `GITSIM_REMOTE_URL` 환경 변수로 꽂아 넣는다."""
+    remote_path = tmp_path / "fake_remote.git"
+    g.init_bare(remote_path)
+    monkeypatch.setenv("GITSIM_REMOTE_URL", str(remote_path))
+    yield remote_path
+
+
+def test_tutorial_full_walkthrough(tmp_path, fake_registered_remote):
     ws = tutorial.start_new(base_dir=tmp_path)
 
     # step 0: init
@@ -56,18 +69,19 @@ def test_tutorial_full_walkthrough(tmp_path):
     ok, _ = tutorial.check_current_step(ws)
     assert ok
 
-    # step 6: remote + push (compose mode; on_enter creates the bare remote)
+    # step 6: register the real remote + push to the workspace's own practice branch
     tutorial.describe_current_step(ws)
-    assert ws.remote_dir.exists()
-    g.run(["remote", "add", "origin", str(ws.remote_dir)], cwd=ws.repo_dir)
-    g.run(["push", "-u", "origin", "main"], cwd=ws.repo_dir)
+    branch = practice_branch_name(ws)
+    g.run(["remote", "add", "origin", str(fake_registered_remote)], cwd=ws.repo_dir)
+    g.run(["push", "-u", "origin", f"main:{branch}"], cwd=ws.repo_dir)
     ok, _ = tutorial.check_current_step(ws)
     assert ok
 
-    # step 7: pull (on_enter injects a teammate commit into origin)
+    # step 7: pull (on_enter injects a teammate commit into origin); upstream tracking set in
+    # step 6 means a plain `git pull` (no args) already targets the right remote branch.
     tutorial.describe_current_step(ws)
     assert ws.get("teammate_marker_commit")
-    g.run(["pull", "origin", "main"], cwd=ws.repo_dir)
+    g.run(["pull"], cwd=ws.repo_dir)
     ok, _ = tutorial.check_current_step(ws)
     assert ok
 

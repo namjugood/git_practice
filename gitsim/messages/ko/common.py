@@ -11,4 +11,8 @@ MESSAGES: dict[str, str] = {
     ),
     "common.workspace_invalid": "{path} 는 gitsim 워크스페이스가 아닙니다 (.gitsim.json 없음)",
     "common.unknown_scenario": "알 수 없는 시나리오 id '{scenario_id}'. 사용 가능한 목록: {available}",
+    "common.remote_not_registered": (
+        "아직 실제 원격 저장소가 등록되지 않았습니다. 먼저 다음을 실행하세요:\n"
+        "  gitsim remote set <GitHub 저장소 주소>"
+    ),
 }

@@ -20,7 +20,15 @@ from typing import Callable, Optional
 
 from gitsim import gitutil as g
 from gitsim.i18n import t as _
-from gitsim.workspace import Workspace, create_workspace, list_workspaces, point_current, resolve_workspace
+from gitsim.workspace import (
+    Workspace,
+    create_workspace,
+    get_remote_url,
+    list_workspaces,
+    point_current,
+    practice_branch_name,
+    resolve_workspace,
+)
 
 TUTORIAL_ID = "tutorial"
 
@@ -40,6 +48,7 @@ class Step:
     on_success: Optional[Callable[[Workspace], None]] = None
     diagnose: Optional[Callable[[Workspace], str]] = None
     requires_main: bool = True
+    requires_remote: bool = False
 
 
 def _list_branches(ws: Workspace) -> list[str]:
@@ -71,6 +80,12 @@ def _require_main(ws: Workspace) -> Optional[str]:
         branch_list=branch_list,
         current=current or _("tutorial.require_main.unknown_position"),
     )
+
+
+def _require_remote() -> Optional[str]:
+    if get_remote_url():
+        return None
+    return _("common.remote_not_registered")
 
 
 def _has_commit(ws: Workspace) -> bool:
@@ -182,36 +197,42 @@ def _diagnose_merge(ws: Workspace) -> str:
 
 
 def _remote_ok(ws: Workspace) -> bool:
-    remote_main = g.bare_ref(ws.remote_dir, "refs/heads/main")
+    branch = practice_branch_name(ws)
+    remote_tip = g.remote_branch_tip(ws.repo_dir, branch)
     local_main = g.rev_parse(ws.repo_dir, "main")
     remotes = g.run(["remote"], cwd=ws.repo_dir, check=False).stdout.split()
-    return bool(remote_main) and remote_main == local_main and "origin" in remotes
+    return bool(remote_tip) and remote_tip == local_main and "origin" in remotes
 
 
 def _diagnose_remote(ws: Workspace) -> str:
     remotes = g.run(["remote"], cwd=ws.repo_dir, check=False).stdout.split()
+    branch = practice_branch_name(ws)
     if "origin" not in remotes:
-        return _("tutorial.diagnose.remote.no_origin", remote_dir=ws.remote_dir)
-    remote_main = g.bare_ref(ws.remote_dir, "refs/heads/main")
-    if not remote_main:
-        return _("tutorial.diagnose.remote.not_pushed")
+        return _("tutorial.diagnose.remote.no_origin", remote_url=get_remote_url(), branch=branch)
+    remote_tip = g.remote_branch_tip(ws.repo_dir, branch)
+    if not remote_tip:
+        return _("tutorial.diagnose.remote.not_pushed", branch=branch)
     local_main = g.rev_parse(ws.repo_dir, "main")
-    if remote_main != local_main:
-        return _("tutorial.diagnose.remote.mismatch")
+    if remote_tip != local_main:
+        return _("tutorial.diagnose.remote.mismatch", branch=branch)
     return _("tutorial.diagnose.remote.looks_ok")
 
 
 def _inject_teammate_commit(ws: Workspace) -> None:
     if ws.get("teammate_marker_commit"):
         return
+    remote_url = get_remote_url()
+    if not remote_url:
+        return
+    branch = practice_branch_name(ws)
     tmp_clone = ws.path / "_tutorial_teammate_tmp"
     if tmp_clone.exists():
         g.force_rmtree(tmp_clone)
-    g.clone(ws.remote_dir, tmp_clone)
+    g.clone_and_checkout(remote_url, tmp_clone, branch)
     g.write_file(tmp_clone, "teammate_note.txt", "동료가 원격에 추가한 파일입니다.\n")
     g.add_all(tmp_clone)
     marker_commit = g.commit(tmp_clone, "동료: teammate_note.txt 추가")
-    g.run(["push", "origin", "main"], cwd=tmp_clone)
+    g.run(["push", "origin", branch], cwd=tmp_clone)
     g.force_rmtree(tmp_clone)
     ws.save_meta(teammate_marker_commit=marker_commit)
 
@@ -293,12 +314,12 @@ def _build_steps() -> list[Step]:
         Step(
             key="remote",
             title=_("tutorial.step.remote.title"),
-            mode="compose",
+            mode="template",
             explain=_("tutorial.step.remote.explain"),
             command_hint=_("tutorial.step.remote.command_hint"),
             check=_remote_ok,
-            on_enter=lambda ws: g.init_bare(ws.remote_dir) if not ws.remote_dir.exists() else None,
             diagnose=_diagnose_remote,
+            requires_remote=True,
         ),
         Step(
             key="pull",
@@ -308,6 +329,7 @@ def _build_steps() -> list[Step]:
             command_hint=_("tutorial.step.pull.command_hint"),
             check=_pulled,
             on_enter=_inject_teammate_commit,
+            requires_remote=True,
             diagnose=_diagnose_pull,
         ),
     ]
@@ -361,12 +383,22 @@ def _ensure_entered(ws: Workspace, step: Step) -> None:
 
 
 def _fill(ws: Workspace, text: str) -> str:
-    return text.replace("{remote_dir}", str(ws.remote_dir)).replace(
-        "{practice_branch}", ws.get("practice_branch") or _("tutorial.fallback_branch_label")
+    return (
+        text.replace("{practice_branch}", ws.get("practice_branch") or _("tutorial.fallback_branch_label"))
+        .replace("{remote_url}", get_remote_url() or "")
+        .replace("{remote_branch}", practice_branch_name(ws))
     )
 
 
 def _step_block(ws: Workspace, idx: int, step: Step) -> str:
+    if step.requires_remote and not get_remote_url():
+        return "\n".join(
+            [
+                _("tutorial.step_block.header", n=idx + 1, total=len(STEPS), title=step.title),
+                "",
+                _("tutorial.step.remote.not_registered"),
+            ]
+        )
     hint = _fill(ws, step.command_hint)
     explain = _fill(ws, step.explain)
     if step.mode == "template":
@@ -418,6 +450,11 @@ def check_current_step(ws: Workspace) -> tuple[bool, str]:
         main_issue = _require_main(ws)
         if main_issue:
             return False, _("tutorial.check.failed", title=step.title, detail=main_issue)
+
+    if step.requires_remote:
+        remote_issue = _require_remote()
+        if remote_issue:
+            return False, _("tutorial.check.failed", title=step.title, detail=remote_issue)
 
     if step.check(ws):
         if step.on_success:

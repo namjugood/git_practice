@@ -3,7 +3,7 @@ from __future__ import annotations
 from gitsim import gitutil as g
 from gitsim.i18n import t as _
 from gitsim.scenarios.base import CheckResult, Scenario
-from gitsim.workspace import Workspace
+from gitsim.workspace import Workspace, practice_branch_name, require_remote_url
 
 
 class MergeConflictScenario(Scenario):
@@ -17,16 +17,18 @@ class MergeConflictScenario(Scenario):
         recipe_initial = _("scenario.merge_conflict.recipe_initial")
         original_line = _("scenario.merge_conflict.recipe_line_original")
 
-        g.init_bare(ws.remote_dir)
+        remote_url = require_remote_url()
+        branch = practice_branch_name(ws)
+
         g.init_repo(ws.repo_dir)
         g.write_file(ws.repo_dir, "recipe.md", recipe_initial)
         g.add_all(ws.repo_dir)
         base = g.commit(ws.repo_dir, _("scenario.merge_conflict.commit.base"))
-        g.run(["remote", "add", "origin", str(ws.remote_dir)], cwd=ws.repo_dir)
+        g.setup_practice_remote(ws.repo_dir, branch, remote_url)
         g.run(["push", "-u", "origin", "main"], cwd=ws.repo_dir)
 
         # 동료의 작업을 시뮬레이션: 별도 클론에서 3번째 줄을 다르게 고쳐 먼저 push
-        g.clone(ws.remote_dir, ws.teammate_dir)
+        g.clone_practice_remote(remote_url, ws.teammate_dir, branch)
         teammate_recipe = recipe_initial.replace(original_line, _("scenario.merge_conflict.recipe_line_teammate"))
         g.write_file(ws.teammate_dir, "recipe.md", teammate_recipe)
         g.add_all(ws.teammate_dir)
@@ -52,7 +54,7 @@ class MergeConflictScenario(Scenario):
     def check(self, ws: Workspace) -> CheckResult:
         details = []
         g.run(["fetch", "origin"], cwd=ws.repo_dir, check=False)
-        remote_main = g.bare_ref(ws.remote_dir, "refs/heads/main")
+        remote_main = g.rev_parse(ws.repo_dir, "origin/main")
         teammate_commit = ws.get("teammate_commit")
         my_commit = ws.get("my_commit")
 

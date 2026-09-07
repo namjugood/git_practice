@@ -4,9 +4,14 @@
     <workspace-root>/
         .gitsim.json     메타데이터 (시나리오 id, 시작 시각, 저장된 커밋 해시 등)
         repo/            학습자가 실제로 git 명령을 실행할 로컬 저장소
-        remote.git/      "원격 저장소" 역할을 하는 로컬 bare 저장소 (origin)
+        remote.git/      (자동화 테스트 전용) 로컬 bare 저장소 — 실제 실행에서는 만들지 않는다
         teammate_clone/  일부 시나리오에서 "동료의 로컬 클론" 역할
         REPORT.md        `gitsim check` 실행 후 생성되는 결과 리포트
+
+`origin` 은 이제 로컬 bare 저장소가 아니라 학습자가 `gitsim remote set <주소>` 로
+등록한 실제 원격 저장소(예: GitHub)다. 워크스페이스마다 `practice_branch_name()`
+이 만들어주는 고유한 브랜치에서만 작업하므로, 여러 시나리오/여러 번의 재시도가
+같은 원격 저장소를 공유해도 서로의 기록을 덮어쓰지 않는다.
 """
 
 from __future__ import annotations
@@ -24,6 +29,7 @@ from gitsim.i18n import t as _
 DEFAULT_ROOT = Path.home() / ".gitsim" / "workspaces"
 LAST_POINTER = Path.home() / ".gitsim" / "last_workspace"
 CURRENT_LINK = Path.home() / ".gitsim" / "current"
+CONFIG_FILE = Path.home() / ".gitsim" / "config.json"
 
 
 @dataclass
@@ -88,6 +94,56 @@ def load_workspace(path: Path) -> Workspace:
 def _remember_last(path: Path) -> None:
     LAST_POINTER.parent.mkdir(parents=True, exist_ok=True)
     LAST_POINTER.write_text(str(path), encoding="utf-8")
+
+
+def _load_config() -> dict[str, Any]:
+    if not CONFIG_FILE.exists():
+        return {}
+    try:
+        return json.loads(CONFIG_FILE.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return {}
+
+
+def _save_config(data: dict[str, Any]) -> None:
+    CONFIG_FILE.parent.mkdir(parents=True, exist_ok=True)
+    CONFIG_FILE.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def get_remote_url() -> Optional[str]:
+    """학습자가 등록한 실제 원격 저장소(예: GitHub) 주소를 돌려준다.
+
+    `GITSIM_REMOTE_URL` 환경 변수가 있으면 그것을 우선한다 — 자동화 테스트에서
+    로컬 bare 저장소를 "가짜 원격"으로 꽂아 넣을 때, 또는 특정 실행에서만 다른
+    원격을 잠깐 쓰고 싶을 때 설정 파일을 건드리지 않고 오버라이드할 수 있다.
+    """
+    env_override = os.environ.get("GITSIM_REMOTE_URL")
+    if env_override:
+        return env_override
+    return _load_config().get("remote_url")
+
+
+def set_remote_url(url: str) -> None:
+    data = _load_config()
+    data["remote_url"] = url
+    _save_config(data)
+
+
+def require_remote_url() -> str:
+    url = get_remote_url()
+    if not url:
+        raise RuntimeError(_("common.remote_not_registered"))
+    return url
+
+
+def practice_branch_name(ws: "Workspace") -> str:
+    """이 워크스페이스(=이번 한 번의 시도) 전용 원격 브랜치 이름.
+
+    워크스페이스 폴더 이름 자체가 이미 `<시나리오id>-<타임스탬프>` 형태로 유일하므로,
+    재시도할 때마다 항상 새 브랜치가 생긴다. gitsim은 이 브랜치를 절대 강제로
+    덮어쓰거나 지우지 않는다 — 실수를 포함한 학습 이력을 전부 남기기 위해서다.
+    """
+    return f"practice/{ws.path.name}"
 
 
 def _clear_current_link() -> None:

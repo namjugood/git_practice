@@ -8,6 +8,7 @@ MESSAGES: dict[str, str] = {
     "report.no_remote_log": "(원격 로그 없음)",
     "report.no_details": "(세부 정보 없음)",
     "report.no_diagnosis": "(진단할 내용 없음)",
+    "report.publish_commit_message": "gitsim: 연습 결과 리포트(README.md) 갱신",
     "report.body": """# GitSim 리포트 — {title}
 
 - 시나리오 ID: `{scenario_id}`

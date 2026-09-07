@@ -6,8 +6,20 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from gitsim import gitutil as g
 from gitsim.scenarios import list_scenarios
 from gitsim.workspace import create_workspace
+
+
+@pytest.fixture(autouse=True)
+def fake_registered_remote(tmp_path, monkeypatch):
+    """실제 GitHub 저장소 대신, 로컬 bare 저장소를 `gitsim remote set`으로 등록한 것처럼
+    `GITSIM_REMOTE_URL` 환경 변수로 꽂아 넣는다. git 입장에서는 로컬 경로든 진짜
+    원격이든 동작이 동일하므로, 네트워크 없이도 real-remote 코드 경로를 그대로 검증할 수 있다."""
+    remote_path = tmp_path / "fake_remote.git"
+    g.init_bare(remote_path)
+    monkeypatch.setenv("GITSIM_REMOTE_URL", str(remote_path))
+    yield remote_path
 
 
 @pytest.mark.parametrize("scenario", list_scenarios(), ids=lambda s: s.id)
@@ -16,7 +28,8 @@ def test_scenario_lifecycle(scenario, tmp_path):
     scenario.setup(ws)
 
     assert (ws.repo_dir / ".git").exists()
-    assert ws.remote_dir.exists()
+    g.run(["fetch", "origin"], cwd=ws.repo_dir, check=False)
+    assert g.rev_parse(ws.repo_dir, "origin/main") is not None, "practice 브랜치가 등록된 원격에 push되지 않았습니다"
 
     briefing = scenario.briefing(ws)
     assert isinstance(briefing, str) and briefing.strip()

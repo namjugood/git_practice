@@ -88,10 +88,31 @@ def init_bare(path: Path, initial_branch: str = "main") -> None:
     run(["config", "core.logAllRefUpdates", "true"], cwd=path)
 
 
-def clone(src: Path, dest: Path) -> None:
+def clone(src: "Path | str", dest: Path) -> None:
     dest.parent.mkdir(parents=True, exist_ok=True)
     run(["clone", "-q", str(src), str(dest)])
     configure_identity(dest)
+
+
+def clone_and_checkout(src: "Path | str", dest: Path, branch: str) -> None:
+    """`src` 를 클론한 뒤, 로컬 브랜치 `branch` 를 원격의 같은 브랜치로 맞춰 체크아웃한다.
+
+    `git clone` 은 기본 브랜치만 체크아웃하므로, 연습 전용 브랜치(`practice/...`)로
+    바로 이동하려면 이 함수를 쓴다. "동료의 로컬 클론"을 만들 때 쓰인다.
+    """
+    clone(src, dest)
+    run(["checkout", "-B", branch, f"origin/{branch}"], cwd=dest)
+
+
+def remote_branch_tip(repo: Path, branch: str) -> Optional[str]:
+    """`origin` 에서 `branch` 를 fetch 한 뒤, 그 원격 브랜치의 현재 커밋 해시를 돌려준다.
+
+    실제 원격(예: GitHub)은 로컬 파일 시스템으로 직접 들여다볼 수 없으므로, bare
+    저장소 파일을 직접 읽던 예전 방식 대신 항상 fetch 로 최신 상태를 받아온 뒤
+    로컬에 생긴 원격 추적 브랜치(`origin/<branch>`)를 확인한다.
+    """
+    run(["fetch", "origin", branch], cwd=repo, check=False)
+    return rev_parse(repo, f"origin/{branch}")
 
 
 def configure_identity(path: Path, name: str = "GitSim 연습생", email: str = "practice@gitsim.local") -> None:
@@ -272,9 +293,23 @@ def reflog_events(repo: Path, refs: list[str], max_count: int = 100) -> list[Ref
     return events
 
 
-def bare_ref(bare_repo: Path, ref: str) -> Optional[str]:
-    return rev_parse(bare_repo, ref)
+def setup_practice_remote(repo_dir: Path, branch: str, remote_url: str) -> None:
+    """`repo_dir`에 실제 원격을 `origin`으로 등록하되, 로컬 `main`이 실제로는
+    원격의 `branch`(예: `practice/<워크스페이스>`)를 가리키도록 refspec을 다시 매핑한다.
+
+    이렇게 하면 시나리오 코드와 안내 문구에 그대로 남아 있는 `git push origin main`,
+    `origin/main` 같은 표현이 실제로는 이 워크스페이스 전용 브랜치에서 동작하게 되어,
+    여러 시나리오/여러 번의 시도가 같은 원격 저장소를 공유해도 서로 덮어쓰지 않는다.
+    """
+    run(["remote", "add", "origin", remote_url], cwd=repo_dir)
+    run(["config", "remote.origin.fetch", f"+refs/heads/{branch}:refs/remotes/origin/main"], cwd=repo_dir)
+    run(["config", "remote.origin.push", f"refs/heads/main:refs/heads/{branch}"], cwd=repo_dir)
 
 
-def bare_reflog(bare_repo: Path, ref: str = "refs/heads/main", max_count: int = 40) -> str:
-    return reflog(bare_repo, ref=ref, max_count=max_count)
+def clone_practice_remote(remote_url: str, dest: Path, branch: str) -> None:
+    """"동료의 로컬 클론"이 원격의 연습 전용 브랜치를 `main`으로 체크아웃하도록 만든다."""
+    clone(remote_url, dest)
+    run(["config", "remote.origin.fetch", f"+refs/heads/{branch}:refs/remotes/origin/main"], cwd=dest)
+    run(["config", "remote.origin.push", f"refs/heads/main:refs/heads/{branch}"], cwd=dest)
+    run(["fetch", "origin"], cwd=dest, check=False)
+    run(["checkout", "-B", "main", "origin/main"], cwd=dest, check=False)

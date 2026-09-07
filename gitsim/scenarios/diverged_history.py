@@ -3,7 +3,7 @@ from __future__ import annotations
 from gitsim import gitutil as g
 from gitsim.i18n import t as _
 from gitsim.scenarios.base import CheckResult, Scenario
-from gitsim.workspace import Workspace
+from gitsim.workspace import Workspace, practice_branch_name, require_remote_url
 
 MARK_REMOTE = "원격팀원변경사항"
 MARK_LOCAL = "내로컬변경사항"
@@ -17,15 +17,17 @@ class DivergedHistoryScenario(Scenario):
     summary = _("scenario.diverged_history.summary")
 
     def setup(self, ws: Workspace) -> None:
-        g.init_bare(ws.remote_dir)
+        remote_url = require_remote_url()
+        branch = practice_branch_name(ws)
+
         g.init_repo(ws.repo_dir)
         g.write_file(ws.repo_dir, "notes.md", "# 작업 노트\n\n- 시작\n")
         g.add_all(ws.repo_dir)
         base = g.commit(ws.repo_dir, _("scenario.diverged_history.commit.base"))
-        g.run(["remote", "add", "origin", str(ws.remote_dir)], cwd=ws.repo_dir)
+        g.setup_practice_remote(ws.repo_dir, branch, remote_url)
         g.run(["push", "-u", "origin", "main"], cwd=ws.repo_dir)
 
-        g.clone(ws.remote_dir, ws.teammate_dir)
+        g.clone_practice_remote(remote_url, ws.teammate_dir, branch)
         g.write_file(ws.teammate_dir, "remote_change.md", f"{MARK_REMOTE}\n")
         g.add_all(ws.teammate_dir)
         remote_commit = g.commit(ws.teammate_dir, _("scenario.diverged_history.commit.remote"))
@@ -44,7 +46,7 @@ class DivergedHistoryScenario(Scenario):
     def check(self, ws: Workspace) -> CheckResult:
         details = []
         g.run(["fetch", "origin"], cwd=ws.repo_dir, check=False)
-        remote_main = g.bare_ref(ws.remote_dir, "refs/heads/main")
+        remote_main = g.rev_parse(ws.repo_dir, "origin/main")
         remote_commit = ws.get("remote_commit")
 
         if not remote_main:
@@ -72,7 +74,16 @@ class DivergedHistoryScenario(Scenario):
         entries = g.reflog_entries(ws.repo_dir)
         rebase_used = any("rebase" in e.action.lower() for e in entries)
         merge_used = any(e.action.lower().startswith("merge") or e.action.lower().startswith("pull") for e in entries)
-        force_push_bare = "forced-update" in g.bare_reflog(ws.remote_dir)
+
+        # 실제 원격은 bare 저장소처럼 파일로 직접 reflog를 들여다볼 수 없으므로,
+        # "강제 push로 팀원의 커밋이 원격에서 사라졌는가"를 직접적인 증거(현재 origin/main의
+        # 조상 여부)로 판단한다.
+        g.run(["fetch", "origin"], cwd=ws.repo_dir, check=False)
+        remote_main = g.rev_parse(ws.repo_dir, "origin/main")
+        remote_commit = ws.get("remote_commit")
+        force_push_bare = bool(remote_commit) and bool(remote_main) and not g.is_ancestor(
+            ws.repo_dir, remote_commit, remote_main
+        )
 
         if force_push_bare:
             findings.append(_("scenario.diverged_history.diagnose.force_push_detected"))

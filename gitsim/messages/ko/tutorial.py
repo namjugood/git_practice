@@ -89,9 +89,9 @@ MESSAGES: dict[str, str] = {
     "tutorial.diagnose.branch_commit.looks_ok": "'{remembered}' 브랜치에 커밋은 있는 것 같은데도 실패했습니다. `gitsim learn check` 를 다시 실행해보세요.",
     "tutorial.diagnose.merge.not_on_main": "지금 브랜치가 'main'이 아니라 '{current}' 입니다. 먼저 `git checkout main` 을 실행하세요.",
     "tutorial.diagnose.merge.not_merged": "main이 아직 '{branch}' 브랜치를 포함하고 있지 않습니다. `git merge {branch}` 를 실행하세요.",
-    "tutorial.diagnose.remote.no_origin": "'origin' 이라는 이름의 원격이 아직 등록되지 않았습니다. `git remote add origin {remote_dir}` 을 실행하세요.",
-    "tutorial.diagnose.remote.not_pushed": "origin은 등록되었지만 아직 main이 push되지 않았습니다. `git push -u origin main` 을 실행하세요.",
-    "tutorial.diagnose.remote.mismatch": "원격의 main이 로컬 main과 다릅니다. `git push -u origin main` 을 다시 실행해보세요.",
+    "tutorial.diagnose.remote.no_origin": "'origin' 이라는 이름의 원격이 아직 등록되지 않았습니다. `git remote add origin {remote_url}` 을 실행하세요.",
+    "tutorial.diagnose.remote.not_pushed": "origin은 등록되었지만 아직 {branch} 브랜치가 push되지 않았습니다. `git push -u origin main:{branch}` 를 실행하세요.",
+    "tutorial.diagnose.remote.mismatch": "원격의 {branch} 브랜치가 로컬 main과 다릅니다. `git push -u origin main:{branch}` 를 다시 실행해보세요.",
     "tutorial.diagnose.remote.looks_ok": "origin 등록과 push까지는 되어 보이는데도 실패했습니다. `gitsim learn check` 를 다시 실행해보세요.",
     "tutorial.diagnose.pull.not_pulled": "아직 동료의 커밋(teammate_note.txt)을 받아오지 않은 것 같습니다. `git pull origin main` 을 실행하세요.",
     # --- 단계 본문 ---
@@ -139,21 +139,32 @@ MESSAGES: dict[str, str] = {
     "tutorial.step.merge.command_hint": "git checkout main\n  git merge {practice_branch}",
     "tutorial.step.remote.title": "6. 원격 저장소 연결하고 업로드하기 (remote, push)",
     "tutorial.step.remote.explain": (
-        "실무에서는 GitHub 같은 원격 저장소에 코드를 올려 협업합니다.\n"
-        "이 튜토리얼에서는 아래 경로에 있는 로컬 저장소가 '원격 저장소' 역할을 합니다.\n"
+        "실무에서는 GitHub 같은 실제 원격 저장소에 코드를 올려 협업합니다. 이번 실습부터는\n"
+        "직접 등록하신 진짜 원격 저장소를 사용합니다.\n"
         "\n"
-        "    원격 저장소 경로: {remote_dir}\n"
+        "    등록된 저장소: {remote_url}\n"
+        "    이번 실습 전용 브랜치: {remote_branch}\n"
         "\n"
-        "이 경로를 사용해서, origin이라는 이름으로 원격을 등록하고 push 하는 명령을\n"
-        "직접 작성해보세요. (형태: git remote add <이름> <경로>, 그 다음 git push -u <이름> main)"
+        "이 브랜치 이름은 gitsim이 실습마다 자동으로 고유하게 만들어줍니다 — 나중에 다시\n"
+        "연습해도 예전 기록을 덮어쓰지 않고 계속 남아있습니다."
     ),
-    "tutorial.step.remote.command_hint": "git remote add origin <위에 적힌 경로를 그대로 입력>\n  git push -u origin main",
+    "tutorial.step.remote.command_hint": "git remote add origin {remote_url}\n  git push -u origin main:{remote_branch}",
+    "tutorial.step.remote.not_registered": (
+        "이 단계부터는 실제 원격 저장소(GitHub 등)가 필요합니다. 아직 등록되지 않았습니다.\n\n"
+        "1. GitHub 등에서 연습 전용으로 쓸 빈 저장소를 하나 만드세요. (기존에 쓰던 저장소 말고,\n"
+        "   새로 만든 저장소를 권장합니다 — gitsim이 여기에 여러 연습 기록을 남깁니다)\n"
+        "2. 그 저장소 주소로 아래 명령을 실행해서 gitsim에 등록하세요.\n\n"
+        "     gitsim remote set <저장소 주소>\n\n"
+        "3. 등록한 뒤 `gitsim learn` 을 다시 실행하면 이 단계로 돌아옵니다."
+    ),
     "tutorial.step.pull.title": "7. 원격의 변경 사항 받아오기 (fetch/pull)",
     "tutorial.step.pull.explain": (
-        "방금 동료가 원격 저장소에 teammate_note.txt 파일을 추가하고 push 했습니다.\n"
-        "당신의 로컬 저장소에는 아직 이 파일이 없습니다. pull로 받아오세요."
+        "방금 동료가 원격 저장소의 {remote_branch} 브랜치에 teammate_note.txt 파일을 추가하고\n"
+        "push 했습니다. 당신의 로컬 저장소에는 아직 이 파일이 없습니다. pull로 받아오세요.\n"
+        "(바로 앞 단계에서 `push -u` 로 이미 main과 {remote_branch} 를 연결해뒀으므로,\n"
+        "브랜치 이름 없이 `git pull` 만 실행해도 자동으로 어디서 받아올지 압니다)"
     ),
-    "tutorial.step.pull.command_hint": "git pull origin main",
+    "tutorial.step.pull.command_hint": "git pull",
     "tutorial.fallback_branch_label": "<앞에서 만든 브랜치>",
     # --- 단계 화면 골격 ---
     "tutorial.step_block.header": "STEP {n}/{total}: {title}",

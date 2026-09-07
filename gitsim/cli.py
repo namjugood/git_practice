@@ -11,7 +11,7 @@ from gitsim import termcolor as t
 from gitsim import tutorial
 from gitsim.i18n import t as _
 from gitsim.scenarios import get_scenario, list_scenarios
-from gitsim.workspace import DEFAULT_ROOT, create_workspace, point_current, resolve_workspace
+from gitsim.workspace import DEFAULT_ROOT, create_workspace, get_remote_url, point_current, resolve_workspace, set_remote_url
 
 
 def cmd_list(args: argparse.Namespace) -> int:
@@ -62,7 +62,11 @@ def cmd_check(args: argparse.Namespace) -> int:
     report_mod.write_report(scenario, ws, result, diagnosis)
     print()
     print(t.dim(_("cli.check.report_saved", path=ws.report_file)))
-    if not result.success:
+    if result.success:
+        pushed_branch = report_mod.publish_report(scenario, ws, result, diagnosis)
+        if pushed_branch:
+            print(t.ok(_("cli.check.report_pushed", branch=pushed_branch)))
+    else:
         print(t.dim(_("cli.check.see_answer_hint")))
     return 0 if result.success else 1
 
@@ -155,6 +159,36 @@ def cmd_workspaces(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_remote(args: argparse.Namespace) -> int:
+    sub = args.remote_action
+    if sub == "show":
+        url = get_remote_url()
+        if url:
+            print(_("cli.remote.current", url=url))
+        else:
+            print(t.dim(_("cli.remote.none")))
+        return 0
+
+    url = args.url
+    if not url:
+        print(t.fail(_("cli.remote.url_required")))
+        return 1
+    proc = g.run(["ls-remote", "--heads", url], check=False)
+    if proc.returncode != 0:
+        print(t.fail(_("cli.remote.unreachable", url=url, detail=proc.stderr.strip())))
+        return 1
+
+    set_remote_url(url)
+    print(t.ok(_("cli.remote.saved", url=url)))
+    print(t.warn(_("cli.remote.safety_notice")))
+    existing_branches = [
+        line.split("\t")[-1].removeprefix("refs/heads/") for line in proc.stdout.splitlines() if line.strip()
+    ]
+    if existing_branches:
+        print(t.dim(_("cli.remote.existing_branches", branches=", ".join(existing_branches))))
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="gitsim",
@@ -195,6 +229,11 @@ def build_parser() -> argparse.ArgumentParser:
     p_ws.add_argument("--base-dir", default=None)
     p_ws.set_defaults(func=cmd_workspaces)
 
+    p_remote = sub.add_parser("remote", help=_("cli.help.remote"))
+    p_remote.add_argument("remote_action", choices=["set", "show"])
+    p_remote.add_argument("url", nargs="?")
+    p_remote.set_defaults(func=cmd_remote)
+
     return parser
 
 
@@ -206,7 +245,7 @@ def main(argv: Optional[list[str]] = None) -> int:
         return 0
     try:
         return args.func(args)
-    except (FileNotFoundError, KeyError) as e:
+    except (FileNotFoundError, KeyError, RuntimeError) as e:
         print(t.fail(str(e)))
         return 1
     except g.GitError as e:

@@ -3,7 +3,7 @@ from __future__ import annotations
 from gitsim import gitutil as g
 from gitsim.i18n import t as _
 from gitsim.scenarios.base import CheckResult, Scenario
-from gitsim.workspace import Workspace
+from gitsim.workspace import Workspace, practice_branch_name, require_remote_url
 
 
 class DeletedBranchScenario(Scenario):
@@ -14,12 +14,14 @@ class DeletedBranchScenario(Scenario):
     summary = _("scenario.deleted_branch.summary")
 
     def setup(self, ws: Workspace) -> None:
-        g.init_bare(ws.remote_dir)
+        remote_url = require_remote_url()
+        branch = practice_branch_name(ws)
+
         g.init_repo(ws.repo_dir)
         g.write_file(ws.repo_dir, "app.py", "def main():\n    print('hello')\n")
         g.add_all(ws.repo_dir)
         g.commit(ws.repo_dir, _("scenario.deleted_branch.commit.initial"))
-        g.run(["remote", "add", "origin", str(ws.remote_dir)], cwd=ws.repo_dir)
+        g.setup_practice_remote(ws.repo_dir, branch, remote_url)
         g.run(["push", "-u", "origin", "main"], cwd=ws.repo_dir)
 
         g.run(["checkout", "-b", "feature/login"], cwd=ws.repo_dir)
