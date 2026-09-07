@@ -69,6 +69,36 @@ PLACEHOLDER_NAME = "본인 이름"
 PLACEHOLDER_EMAIL = "본인 이메일"
 
 
+def _list_branches(ws: Workspace) -> list[str]:
+    proc = g.run(["branch", "--format=%(refname:short)"], cwd=ws.repo_dir, check=False)
+    return [b.strip() for b in proc.stdout.splitlines() if b.strip()]
+
+
+def _require_main(ws: Workspace) -> Optional[str]:
+    """'main' 브랜치가 존재하는지 먼저 확인한다.
+
+    main이 없으면 이후 단계 대부분이 원인 불명으로 실패하기 때문에, 다른 진단보다
+    먼저 이걸 확인해서 진짜 근본 원인을 짚어준다 (예: 아직 master를 main으로
+    바꾸지 않았거나, 도중에 main 브랜치 자체가 사라진 경우).
+    """
+    if g.rev_parse(ws.repo_dir, "main") is not None:
+        return None
+    branches = _list_branches(ws)
+    current = g.current_branch(ws.repo_dir)
+    branch_list = ", ".join(branches) if branches else "(브랜치가 하나도 없음)"
+    return (
+        f"이 저장소에는 'main' 이라는 이름의 브랜치가 없습니다. (지금 있는 브랜치: {branch_list} / 현재 위치: {current or '알 수 없음'})\n"
+        "이 튜토리얼은 기본 브랜치 이름이 반드시 'main' 이어야 진행됩니다. 아래 중 지금 상황에 맞는 것을 실행하세요.\n\n"
+        "  - 'master' 브랜치가 있고 그게 사실상 main 역할을 해야 한다면:\n"
+        "      git checkout master\n"
+        "      git branch -m main\n\n"
+        f"  - 지금 있는 브랜치({current or '<현재 브랜치>'})가 main 역할을 해야 한다면:\n"
+        f"      git branch -m {current or '<현재 브랜치>'} main\n\n"
+        "이름을 바꾼 뒤에는 이 저장소 위에서 만들었던 다른 브랜치(예: 연습용 브랜치)들이 "
+        "여전히 main을 기준으로 갈라져 있는지 `git log --oneline --graph --all` 로 확인해보세요."
+    )
+
+
 def _has_commit(ws: Workspace) -> bool:
     return g.rev_parse(ws.repo_dir, "HEAD") is not None
 
@@ -154,6 +184,9 @@ def _branch_ahead_of_main(ws: Workspace) -> bool:
 
 
 def _diagnose_branch_commit(ws: Workspace) -> str:
+    main_issue = _require_main(ws)
+    if main_issue:
+        return main_issue
     remembered = ws.get("practice_branch")
     current = g.current_branch(ws.repo_dir)
     if not remembered:
@@ -193,6 +226,9 @@ def _merged(ws: Workspace) -> bool:
 
 
 def _diagnose_merge(ws: Workspace) -> str:
+    main_issue = _require_main(ws)
+    if main_issue:
+        return main_issue
     branch = ws.get("practice_branch") or "<앞에서 만든 브랜치>"
     current = g.current_branch(ws.repo_dir)
     if current != "main":
@@ -208,6 +244,9 @@ def _remote_ok(ws: Workspace) -> bool:
 
 
 def _diagnose_remote(ws: Workspace) -> str:
+    main_issue = _require_main(ws)
+    if main_issue:
+        return main_issue
     remotes = g.run(["remote"], cwd=ws.repo_dir, check=False).stdout.split()
     if "origin" not in remotes:
         return f"'origin' 이라는 이름의 원격이 아직 등록되지 않았습니다. `git remote add origin {ws.remote_dir}` 을 실행하세요."
@@ -244,6 +283,9 @@ def _pulled(ws: Workspace) -> bool:
 
 
 def _diagnose_pull(ws: Workspace) -> str:
+    main_issue = _require_main(ws)
+    if main_issue:
+        return main_issue
     return "아직 동료의 커밋(teammate_note.txt)을 받아오지 않은 것 같습니다. `git pull origin main` 을 실행하세요."
 
 
