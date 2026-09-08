@@ -104,7 +104,9 @@ def clone_and_checkout(src: "Path | str", dest: Path, branch: str) -> None:
     """`src` 를 클론한 뒤, 로컬 브랜치 `branch` 를 원격의 같은 브랜치로 맞춰 체크아웃한다.
 
     `git clone` 은 기본 브랜치만 체크아웃하므로, 연습 전용 브랜치(`practice/...`)로
-    바로 이동하려면 이 함수를 쓴다. "동료의 로컬 클론"을 만들 때 쓰인다.
+    바로 이동하려면 이 함수를 쓴다. `tutorial.py` 처럼 refspec을 재매핑하지 *않은*
+    저장소(즉 원격의 실제 브랜치 이름을 그대로 쓰는 저장소)에서만 사용한다 — refspec을
+    재매핑한 시나리오 저장소의 클론에는 대신 `clone_practice_remote()` 를 쓴다.
     """
     clone(src, dest)
     run(["checkout", "-B", branch, f"origin/{branch}"], cwd=dest)
@@ -116,6 +118,14 @@ def remote_branch_tip(repo: Path, branch: str) -> Optional[str]:
     실제 원격(예: GitHub)은 로컬 파일 시스템으로 직접 들여다볼 수 없으므로, bare
     저장소 파일을 직접 읽던 예전 방식 대신 항상 fetch 로 최신 상태를 받아온 뒤
     로컬에 생긴 원격 추적 브랜치(`origin/<branch>`)를 확인한다.
+
+    주의: `setup_practice_remote`/`clone_practice_remote` 로 fetch refspec을
+    `+refs/heads/<branch>:refs/remotes/origin/main` 으로 재매핑해둔 저장소에는 쓸 수
+    없다 — 그런 저장소에서는 `branch` 의 내용이 `origin/<branch>` 가 아니라 항상
+    `origin/main` 에 들어오므로 이 함수는 항상 None을 반환한다. 그런 저장소에서는
+    대신 `run(["fetch", "origin"], ...)` 뒤 `rev_parse(repo, "origin/main")` 을 쓴다
+    (6개 시나리오의 check()/diagnose() 가 이렇게 한다). 이 함수는 refspec을 그대로 둔
+    저장소(현재는 tutorial.py)에서만 쓰도록 한다.
     """
     run(["fetch", "origin", branch], cwd=repo, check=False)
     return rev_parse(repo, f"origin/{branch}")
@@ -300,21 +310,35 @@ def reflog_events(repo: Path, refs: list[str], max_count: int = 100) -> list[Ref
 
 
 def setup_practice_remote(repo_dir: Path, branch: str, remote_url: str) -> None:
-    """`repo_dir`에 실제 원격을 `origin`으로 등록하되, 로컬 `main`이 실제로는
-    원격의 `branch`(예: `practice/<워크스페이스>`)를 가리키도록 refspec을 다시 매핑한다.
+    """`repo_dir`에 실제 원격을 `origin`으로 등록하고(로컬 `main`이 실제로는 원격의
+    `branch`(예: `practice/<워크스페이스>`)를 가리키도록 refspec을 다시 매핑한 뒤), 지금까지
+    쌓인 커밋을 그 브랜치로 push한다.
 
     이렇게 하면 시나리오 코드와 안내 문구에 그대로 남아 있는 `git push origin main`,
     `origin/main` 같은 표현이 실제로는 이 워크스페이스 전용 브랜치에서 동작하게 되어,
     여러 시나리오/여러 번의 시도가 같은 원격 저장소를 공유해도 서로 덮어쓰지 않는다.
+
+    refspec을 등록하기 전에 push하면 그냥 로컬 `main` 이름 그대로 원격에 올라가 버리므로,
+    두 단계는 항상 이 순서로 함께 일어나야 한다 — 그래서 호출자가 순서를 따로 신경 쓰지
+    않도록 이 함수 안에서 최초 push까지 함께 처리한다.
     """
     run(["remote", "add", "origin", remote_url], cwd=repo_dir)
     run(["config", "remote.origin.fetch", f"+refs/heads/{branch}:refs/remotes/origin/main"], cwd=repo_dir)
     run(["config", "remote.origin.push", f"refs/heads/main:refs/heads/{branch}"], cwd=repo_dir)
+    run(["push", "-u", "origin", "main"], cwd=repo_dir)
 
 
 def clone_practice_remote(remote_url: str, dest: Path, branch: str) -> None:
-    """"동료의 로컬 클론"이 원격의 연습 전용 브랜치를 `main`으로 체크아웃하도록 만든다."""
-    clone(remote_url, dest)
+    """"동료의 로컬 클론"이 원격의 연습 전용 브랜치를 `main`으로 체크아웃하도록 만든다.
+
+    등록된 원격 저장소에는 이전에 연습했던 다른 워크스페이스들의 `practice/*` 브랜치도
+    계속 쌓여 있을 수 있으므로(실수까지 포함해 이력을 절대 지우지 않는 설계), 전체
+    저장소를 그대로 clone하면 매번 그 무관한 히스토리를 전부 내려받게 된다.
+    `--single-branch --branch <branch>` 로 이번 워크스페이스가 쓰는 브랜치만 받는다.
+    """
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    run(["clone", "-q", "--single-branch", "--branch", branch, remote_url, str(dest)])
+    configure_identity(dest)
     run(["config", "remote.origin.fetch", f"+refs/heads/{branch}:refs/remotes/origin/main"], cwd=dest)
     run(["config", "remote.origin.push", f"refs/heads/main:refs/heads/{branch}"], cwd=dest)
     run(["fetch", "origin"], cwd=dest, check=False)

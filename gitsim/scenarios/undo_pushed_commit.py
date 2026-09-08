@@ -24,7 +24,6 @@ class UndoPushedCommitScenario(Scenario):
         g.add_all(ws.repo_dir)
         base = g.commit(ws.repo_dir, _("scenario.undo_pushed_commit.commit.initial"))
         g.setup_practice_remote(ws.repo_dir, branch, remote_url)
-        g.run(["push", "-u", "origin", "main"], cwd=ws.repo_dir)
 
         g.write_file(
             ws.repo_dir,

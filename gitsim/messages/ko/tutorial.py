@@ -93,7 +93,7 @@ MESSAGES: dict[str, str] = {
     "tutorial.diagnose.remote.not_pushed": "origin은 등록되었지만 아직 {branch} 브랜치가 push되지 않았습니다. `git push -u origin main:{branch}` 를 실행하세요.",
     "tutorial.diagnose.remote.mismatch": "원격의 {branch} 브랜치가 로컬 main과 다릅니다. `git push -u origin main:{branch}` 를 다시 실행해보세요.",
     "tutorial.diagnose.remote.looks_ok": "origin 등록과 push까지는 되어 보이는데도 실패했습니다. `gitsim learn check` 를 다시 실행해보세요.",
-    "tutorial.diagnose.pull.not_pulled": "아직 동료의 커밋(teammate_note.txt)을 받아오지 않은 것 같습니다. `git pull origin main` 을 실행하세요.",
+    "tutorial.diagnose.pull.not_pulled": "아직 동료의 커밋(teammate_note.txt)을 받아오지 않은 것 같습니다. `git pull` 을 실행하세요.",
     # --- 단계 본문 ---
     "tutorial.step.init.title": "0. 저장소 만들기 (git init)",
     "tutorial.step.init.explain": (

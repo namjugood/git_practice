@@ -4,7 +4,6 @@
     <workspace-root>/
         .gitsim.json     메타데이터 (시나리오 id, 시작 시각, 저장된 커밋 해시 등)
         repo/            학습자가 실제로 git 명령을 실행할 로컬 저장소
-        remote.git/      (자동화 테스트 전용) 로컬 bare 저장소 — 실제 실행에서는 만들지 않는다
         teammate_clone/  일부 시나리오에서 "동료의 로컬 클론" 역할
         REPORT.md        `gitsim check` 실행 후 생성되는 결과 리포트
 
@@ -41,10 +40,6 @@ class Workspace:
     @property
     def repo_dir(self) -> Path:
         return self.path / "repo"
-
-    @property
-    def remote_dir(self) -> Path:
-        return self.path / "remote.git"
 
     @property
     def teammate_dir(self) -> Path:

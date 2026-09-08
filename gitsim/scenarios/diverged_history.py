@@ -25,7 +25,6 @@ class DivergedHistoryScenario(Scenario):
         g.add_all(ws.repo_dir)
         base = g.commit(ws.repo_dir, _("scenario.diverged_history.commit.base"))
         g.setup_practice_remote(ws.repo_dir, branch, remote_url)
-        g.run(["push", "-u", "origin", "main"], cwd=ws.repo_dir)
 
         g.clone_practice_remote(remote_url, ws.teammate_dir, branch)
         g.write_file(ws.teammate_dir, "remote_change.md", f"{MARK_REMOTE}\n")

@@ -22,7 +22,6 @@ class WrongBranchCommitScenario(Scenario):
         g.add_all(ws.repo_dir)
         g.commit(ws.repo_dir, _("scenario.wrong_branch_commit.commit.initial"))
         g.setup_practice_remote(ws.repo_dir, branch, remote_url)
-        g.run(["push", "-u", "origin", "main"], cwd=ws.repo_dir)
         clean_main = g.rev_parse(ws.repo_dir, "main")
 
         # 브랜치를 새로 만드는 걸 깜빡하고 main 위에 그대로 기능 커밋을 쌓았다고 가정.

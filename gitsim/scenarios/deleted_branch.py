@@ -22,7 +22,6 @@ class DeletedBranchScenario(Scenario):
         g.add_all(ws.repo_dir)
         g.commit(ws.repo_dir, _("scenario.deleted_branch.commit.initial"))
         g.setup_practice_remote(ws.repo_dir, branch, remote_url)
-        g.run(["push", "-u", "origin", "main"], cwd=ws.repo_dir)
 
         g.run(["checkout", "-b", "feature/login"], cwd=ws.repo_dir)
         g.append_file(ws.repo_dir, "app.py", "\ndef login(user):\n    return True\n")

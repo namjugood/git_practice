@@ -59,11 +59,11 @@ def cmd_check(args: argparse.Namespace) -> int:
     for d in diagnosis:
         print(f"  - {d}")
 
-    report_mod.write_report(scenario, ws, result, diagnosis)
+    report_text = report_mod.write_report(scenario, ws, result, diagnosis)
     print()
     print(t.dim(_("cli.check.report_saved", path=ws.report_file)))
     if result.success:
-        pushed_branch = report_mod.publish_report(scenario, ws, result, diagnosis)
+        pushed_branch = report_mod.publish_report(ws, report_text, result)
         if pushed_branch:
             print(t.ok(_("cli.check.report_pushed", branch=pushed_branch)))
     else:

@@ -25,7 +25,6 @@ class MergeConflictScenario(Scenario):
         g.add_all(ws.repo_dir)
         base = g.commit(ws.repo_dir, _("scenario.merge_conflict.commit.base"))
         g.setup_practice_remote(ws.repo_dir, branch, remote_url)
-        g.run(["push", "-u", "origin", "main"], cwd=ws.repo_dir)
 
         # 동료의 작업을 시뮬레이션: 별도 클론에서 3번째 줄을 다르게 고쳐 먼저 push
         g.clone_practice_remote(remote_url, ws.teammate_dir, branch)

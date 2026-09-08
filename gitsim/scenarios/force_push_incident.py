@@ -25,7 +25,6 @@ class ForcePushIncidentScenario(Scenario):
         g.add_all(ws.repo_dir)
         base = g.commit(ws.repo_dir, _("scenario.force_push_incident.commit.initial"))
         g.setup_practice_remote(ws.repo_dir, branch, remote_url)
-        g.run(["push", "-u", "origin", "main"], cwd=ws.repo_dir)
 
         # 팀원 B가 클론해서 분석 내용을 새 파일로 추가하고 push (origin main = B)
         g.clone_practice_remote(remote_url, ws.teammate_dir, branch)
